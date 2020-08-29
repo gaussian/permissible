@@ -10,10 +10,10 @@ No license for use, viewing, or reproduction without explicit written permission
 from django.contrib.auth.models import Group
 from django.db import models
 
-from neutron.permissible.models import UneditableModelWithOriginalMixin
+from .permissible_mixin import PermissibleMixin
 
 
-class GroupPermRootBase(UneditableModelWithOriginalMixin, models.Model):
+class GroupPermRootBase(models.Model):
     """
     Base abstract model that joins the Django Group model to another model
     (`PermRootBase`), such as "Team" or "Project". This allows us to have
@@ -64,13 +64,43 @@ class GroupPermRootBase(UneditableModelWithOriginalMixin, models.Model):
     def __str__(self):
         raise not NotImplementedError
 
+    def set_permissions_for_group(self):
+        """
+        Assign the correct permissions over the associated PermRootBase to this
+        object's Group, according to `self.ROLE_DEFINITIONS`.
+
+        Ideally, this is only called when the object (and its Group) are created,
+        but it can also be called via the admin interface in case of
+        troubleshooting.
+        """
+        from guardian.shortcuts import assign_perm
+
+        # Get the related PermRootBase model
+        root_fields = [field for field in self._meta.get_fields()
+                       if isinstance(field, models.ForeignKey) and isinstance(field.related_model, PermRootBase)]
+        assert len(root_fields) == 1, f"The associated `PermRootBase` for this model (`{self.__class__}`) has " \
+                                      f"been set up incorrectly. Make sure this class has one (and only one) " \
+                                      f"ForeignKey to a `GroupPermRootBase`."
+
+        # Find the root object associated with thie object (PermRootBase)
+        root_field = root_fields[0]
+        root_obj = getattr(self, root_field.name)
+
+        # Find the permissions we need to assign, using ROLE_DEFINITIONS
+        root_model = root_field.related_model
+        _, short_perm_codes = self.ROLE_DEFINITIONS[self.role]
+        perms = root_model.get_permission_codenames(short_perm_codes)
+
+        # Assign these permissions (for found the PermRootBase object) to this object's Group
+        for perm in perms:
+            assign_perm(perm, self.group, root_obj)
+
     def save(self, *args, **kwargs):
         """
         Save the model. When creating a new record, create the associated Group
-        and give it the appropriate permissions, according to role_definitions.
+        and give it the appropriate permissions, according to
+        `self.ROLE_DEFINITIONS`.
         """
-
-        from guardian.shortcuts import assign_perm
 
         # Create Group before adding a GroupPermRootBase
         if self._state.adding and not self.group_id:
@@ -81,16 +111,12 @@ class GroupPermRootBase(UneditableModelWithOriginalMixin, models.Model):
             self.group_id = group.id
 
             # Set the Group's permissions
-            _, short_perm_codes = self.ROLE_DEFINITIONS[self.role]
-            for short_perm_code in short_perm_codes:
-                pass
-                # TODO: assign perm to this Group
-                # assign_perm()
+            self.set_permissions_for_group()
 
         return super().save(*args, **kwargs)
 
 
-class PermRootBase(models.Model):
+class PermRootBase(PermissibleMixin, models.Model):
     """
     A model that has a corresponding
     """
@@ -99,9 +125,29 @@ class PermRootBase(models.Model):
         abstract = True
 
     def save(self, *args, **kwargs):
+        """
+        Save the model. On save, automatically create one (associated)
+        `GroupPermRootBase` record for each role option in the (associated)
+        `GroupPermRootBase` model.
+
+        :param args:
+        :param kwargs:
+        :return:
+        """
         super().save(*args, **kwargs)
 
-        # On save, automatically create one (associated) GroupPermRootBase record for each
-        # role option in the (associated) GroupPermRootBase model
-        # TODO: find the first related model that isinstance(o, GroupPermRootBase)
-        # TODO: create a GroupPermRootBase record for each role option that the GroupPermRootBase has
+        # Find the join field for the (one and only one) GroupPermRootBase relation
+        join_fields = [field for field in self._meta.get_fields()
+                       if isinstance(field, models.ManyToOneRel)
+                       and isinstance(field.related_model, GroupPermRootBase)]
+        assert len(join_fields) == 1, f"The associated `GroupPermRootBase` for this model (`{self.__class__}`) has " \
+                                      f"been set up incorrectly. Make sure there is one (and only one) " \
+                                      f"`GroupPermRootBase` model with a ForeignKey to `{self.__class__}`"
+
+        # Create GroupPermRootBase for each role in possible roles
+        join_model = join_fields[0].related_model
+        for role, _ in join_model._meta.get_field("role").choices:
+            join_model(
+                role=role,
+                **{self._meta.model_name: self}
+            ).save()
