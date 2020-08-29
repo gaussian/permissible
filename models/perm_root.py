@@ -30,7 +30,7 @@ class GroupPermRootBase(models.Model):
     """
 
     # Owning Group (one-to-one relationship)
-    group = models.OneToOneField("auth.Group", on_delete=models.CASCADE, primary_key=True, editable=False,
+    group = models.OneToOneField("auth.Group", on_delete=models.CASCADE, primary_key=True,
                                  help_text="The owning group for this join model. "
                                            "There is a one-to-one relationship between "
                                            "this model and Group.")
@@ -51,12 +51,9 @@ class GroupPermRootBase(models.Model):
     # Role
     role = models.PositiveIntegerField(choices=((role_value, role_label)
                                                 for role_value, (role_label, _) in ROLE_DEFINITIONS.items()),
-                                       default=ROLE_DEFINITIONS[0][0], editable=False,
+                                       default=ROLE_DEFINITIONS[0][0],
                                        help_text="This defines the role of the associated Group, allowing "
                                                  "permissions to function more in line with RBAC.")
-
-    # The core fields of this model should not be editable through any means
-    UNEDITABLE_FIELDS = ["group_id", "role"]
 
     class Meta:
         abstract = True
