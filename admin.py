@@ -47,3 +47,14 @@ class PermissibleAdminMixin(object):
     def has_view_permission(self, request, obj=None):
         return self._has_permission("retrieve", request=request, obj=obj) or \
                self._has_permission("update", request=request, obj=obj)
+
+
+class PermissibleGroupRootAdminMixin(object):
+    def set_default_group_permissions(self, request, queryset):
+        for group_root_obj in queryset:
+            group_root_obj.set_permissions_for_group()
+    set_default_group_permissions.short_description = "Set default permissions of associated Group"
+
+    actions = [
+        set_default_group_permissions
+    ]
