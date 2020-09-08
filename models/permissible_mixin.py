@@ -161,6 +161,10 @@ class PermissibleMixin(object):
         :param action:
         :return:
         """
+        if not self.global_action_perm_map and not self.obj_action_perm_map:
+            raise NotImplementedError("No permissions maps in `PermissibleMixin`, did you mean to define "
+                                      "`obj_action_perm_map` on your model?")
+
         perm_defs = self.obj_action_perm_map.get(action, None)
         if perm_defs is None:
             return True
@@ -174,8 +178,11 @@ class PermissibleMixin(object):
                 obj_check_passes = perm_def.condition_checker(obj, user)
             else:
                 obj_check_passes = True
-            perms = obj.get_permission_codenames(perm_def.short_perm_codes)
-            has_perms = user.has_perms(perms, obj)
+            if perm_def.short_perm_codes is None:
+                has_perms = True
+            else:
+                perms = obj.get_permission_codenames(perm_def.short_perm_codes)
+                has_perms = user.has_perms(perms, obj)
             if has_perms and obj_check_passes:
                 return True
 
@@ -193,6 +200,22 @@ class PermissibleMixin(object):
         The use of this function is optional, though derived classes make use of this.
         """
         raise NotImplementedError
+
+    def get_unretrieved(self, attr_name):
+        field = getattr(self.__class__, attr_name).field
+        model_class = field.related_model
+        pk = getattr(self, field.attname)
+        return model_class(pk=pk)
+
+    def get_unretrieved_nested(self, attr_name, attr_name_nested):
+        field = getattr(self.__class__, attr_name).field
+        model_class = field.related_model
+        field_name = field.attname
+        nested_field = getattr(self.__class__, attr_name_nested).field
+        nested_model_class = nested_field.related_model
+        nested_pk = getattr(self, nested_field.attname)
+        pk = nested_model_class.objects.filter(pk=nested_pk).values_list(field_name, flat=True)[0]
+        return model_class(pk=pk)
 
     @staticmethod
     def merge_action_perm_maps(*perm_maps):
@@ -216,16 +239,22 @@ class PermissibleSelfOnlyMixin(object):
     permissions on the object that we are trying to access.
 
     Note that no global checks are done.
+    Note that no "list" permission checks are done (inaccessible objects
+    should be filtered out instead, using
+    `rest_framework_guardian.ObjectPermissionsFilter`).
+    Note that no "create" permission checks are done (cannot check object
+    permissions on an object that hasn't been created yet).
     """
 
     obj_action_perm_map = {
-        "create": [PermDef(["add"])],
-        "list": [PermDef(["view"])],
         "retrieve": [PermDef(["view"])],
         "update": [PermDef(["change"])],
         "partial_update": [PermDef(["change"])],
         "delete": [PermDef(["delete"])],
     }
+
+    def get_permissions_root_obj(self) -> object:
+        return self
 
 
 class PermissibleRootOnlyMixin(PermissibleMixin):
@@ -237,19 +266,21 @@ class PermissibleRootOnlyMixin(PermissibleMixin):
     permission on the original (child) object.
 
     Note that no global checks are done.
+    Note that no "list" permission checks are done (permissions checks should
+    instead be done on the root object, in the "list" action, via
+    `permissible.PermissibleRootPermissionsFilter`).
     """
 
     obj_action_perm_map = {
-        "create": [PermDef(["change"], obj_getter=PermissibleMixin.get_permissions_root_obj,)],
-        "list": [PermDef(["view"], obj_getter=PermissibleMixin.get_permissions_root_obj,)],
-        "retrieve": [PermDef(["view"], obj_getter=PermissibleMixin.get_permissions_root_obj,)],
-        "update": [PermDef(["change"], obj_getter=PermissibleMixin.get_permissions_root_obj,)],
-        "partial_update": [PermDef(["change"], obj_getter=PermissibleMixin.get_permissions_root_obj,)],
-        "delete": [PermDef(["delete"], obj_getter=PermissibleMixin.get_permissions_root_obj,)],
+        "create": [PermDef(["add_on"], obj_getter=PermissibleMixin.get_permissions_root_obj)],
+        "retrieve": [PermDef(["view"], obj_getter=PermissibleMixin.get_permissions_root_obj)],
+        "update": [PermDef(["change_on"], obj_getter=PermissibleMixin.get_permissions_root_obj)],
+        "partial_update": [PermDef(["change_on"], obj_getter=PermissibleMixin.get_permissions_root_obj)],
+        "delete": [PermDef(["change_on"], obj_getter=PermissibleMixin.get_permissions_root_obj)],
     }
 
 
-class PermissibleSelfAndRootMixin(PermissibleMixin):
+class PermissibleSelfOrRootMixin(PermissibleMixin):
     """
     A default configuration of permissions that checks for object-level
     permissions on BOTH the ROOT of the object that we are trying to access,

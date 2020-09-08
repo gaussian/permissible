@@ -37,15 +37,19 @@ that is taken on an object in the model (e.g. a "retrieve" action on a "survey")
 (We can also use classes like `PermissibleSelfOnlyMixin` to define good default
 permission maps for our models.)
 
+Remember to add any new permissions (beyond add, view, change, delete) to your
+model's `Meta.permissions` variable.
+
 With the permissions configured, now we can force different views to use them:
-- If you would like the permissions to work for API views (via django-rest-framework):
-Add `PermissiblePerms` to the `permission_classes` for the viewsets for our models
+- If you would like the permissions to work for API views (via
+django-rest-framework): Add `PermissiblePerms` to the `permission_classes` for
+the viewsets for our models
 - If you would like the permissions to work in the Django admin: Add
 `PermissibleAdminMixin` to the admin classes for our models
 
 That's it. Actions are now protected by permissions checks. But there is no easy
-way to create the permissions in the first place. That's where the second feature
-comes in.
+way to create the permissions in the first place. That's where the next two
+features come in.
 
 
 ## Feature 2: Simple permissions assignment using "root" models
@@ -61,30 +65,56 @@ But `permissible` solves the problem of tying this to the Django `Group` model,
 which is what we use for permissions.
 
 To accomplish this, `permissible` provides two base model classes that you should use:
-1. **`PermRootBase`**: Make the root model (e.g. `Team`) derive from `PermRootBase`
-2. **`GroupPermRootBase`**: Create a new model that derives from `GroupPermRootBase`
+1. **`PermRoot`**: Make the root model (e.g. `Team`) derive from `PermRoot`
+2. **`PermRootGroup`**: Create a new model that derives from `PermRootGroup`
 and has a `ForeignKey` to the root model
 
 You can then simply adjust your permissions maps in `PermissibleMixin` to
 incorporate checking of the root model for permissions. See the documentation for
 `PermDef` and `PermissibleMixin.has_object_permissions` for info and examples.
 
+You can also use `PermissibleGroupRootMixin` to help you manage the
+`PermRootGroup` records.
 
-# Example in words
+
+## Feature 3: Assignment on record creation
+
+`permissible` can automatically assign object permissions on object creation,
+through use of 3 view-related mixins:
+- `admin.PermissibleObjectAssignMixin` (for admin classes - give creating user all
+permissions)
+- `serializers.PermissibleObjectAssignMixin` (for serializers - give creating user
+all permissions)
+- `serializers.PermissibleRootObjectAssignMixin` (for serializers for root models
+like "Team" or "Project - add creating user to all root model's Groups)
+
+NOTE: this feature is dependent on django-guardian, as it uses the `assign_perm`
+shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
+`ObjectPermissionsAssignmentMixin` mixin from djangorestframework-guardian.
+
+
+# Full instructions
+
+1. 
+
+
+# Example flow
 
 - The application has the following models:
     - `User` (inherits Django's base abstract user model)
     - `Group` (Django's model)
-    - `Team` (inherits `PermRootBase`)
-    - `TeamGroup` (inherits `GroupPermRootBase`)
+    - `Team` (inherits `PermRoot`)
+    - `TeamGroup` (inherits `PermRootGroup`)
     - `TeamInfo` (contains a foreign key to `Team`)
+   
+### Create a team
  - A new team is created (via Django admin), which triggers the creation of appropriate
  groups and assignment of permissions:
     - `Team.save()` creates several `TeamGroup` records, one for each possible role
     (e.g. member, owner)
     - For each `TeamGroup`, the `save()` method triggers the creation of a new `Group`,
     and assigns permissions to each of these groups, in accordance with
-    `GroupPermRootBase.role_definitions`:
+    `PermRootGroup.role_definitions`:
         - `TeamGroup` with "Member" role is given no permissions
         - `TeamGroup` with "Viewer" role is given "view_team" permission
         - `TeamGroup` with "Contributor" role is given "contribute_to_team" and "view_team"
@@ -96,13 +126,29 @@ incorporate checking of the root model for permissions. See the documentation fo
         - (NOTE: this behavior can be customized)
     - Note that no one is given permission to create `Team` to begin with - it must have
     been created by a superuser or someone who was manually given such permission in the admin
+
+### Create a user
 - A new user is created (via Django admin), and added to the relevant groups (e.g. members, admins)
-- The user tries to access a `TeamInfo` record, either via API (django-rest-framework) or Django
+
+### Edit a team-related record
+- The user tries to edit a `TeamInfo` record, either via API (django-rest-framework) or Django
  admin, triggering the following checks:
-    - View/viewset checks global permissions (automatically passes, if we are using DRF and
-    `PermissiblePermsNoGlobal`)
+    - View/viewset checks global permissions
     - View/viewset checks object permissions:
         - Checking object permission directly FAILS (as this user was not given any permission for
         this object in particular)
         - Checking permission for root object (i.e. team) SUCCEEDS if the user was added to the
         correct groups
+
+### Create a team-related record
+- The user tries to create a `TeamInfo` record, either via API (django-rest-framework) or Django
+ admin, triggering the following checks:
+    - View/viewset checks global permissions
+    - View/viewset checks creation permissions:
+        - Checking object permission directly FAILS as this object doesn't have an ID yet, so
+        can't have any permissions associated with it
+        - Checking permission for root object (i.e. team) SUCCEEDS if the user was added to the
+        correct groups
+    - View/viewset does not check object permission (this is out of our control, and makes sense
+    as there is no object)
+- Upon create

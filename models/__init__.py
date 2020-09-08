@@ -1,3 +1,4 @@
-from .perm_root import PermRootBase, GroupPermRootBase
+from .perm_root import PermRootGroup, PermRoot, PermRootUser
 from .permissible_mixin import PermDef, PermissibleMixin, PermissibleSelfOnlyMixin, PermissibleRootOnlyMixin, \
-    PermissibleSelfAndRootMixin
+    PermissibleSelfOrRootMixin
+from .tests import TestPermissibleFromSelf, TestPermRoot, TestPermRootGroup, TestPermRootUser, TestPermissibleFromRoot
