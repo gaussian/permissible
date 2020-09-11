@@ -9,35 +9,13 @@ No license for use, viewing, or reproduction without explicit written permission
 
 from collections import defaultdict
 from itertools import chain
-from typing import Dict, List
+from typing import Dict, List, Union, Optional
 
 from django.contrib.auth.models import PermissionsMixin
+from django.db.models.fields.related import RelatedField, ManyToManyField
+from django.db.models.fields.reverse_related import ForeignObjectRel
 
-
-class PermDef:
-    """
-    A simple data structure to hold instructions for permissions configuration.
-
-    Examples:
-        PermDef(["change"], obj_getter=PermissibleMixin.get_permissions_root_obj
-        PermDef(["view"], obj_getter=lambda o: o.project.team)
-        PermDef([], condition_checker=lambda o, u: o.is_public)
-        PermDef(["view", "change"], condition_checker=lambda o, u: not o.is_public and u.is_superuser)
-    """
-
-    def __init__(self, short_perm_codes, obj_getter=None, condition_checker=None):
-        """
-        Initialize.
-        :param short_perm_codes: A list of short permission codes, e.g. ["view", "change"]
-        :param obj_getter: A function that takes an initial object and returns its root
-        object, e.g. a "survey" might be the root of "survey question" objects
-        :param condition_checker: A function that takes an object and the user, and
-        returns a boolean, which is AND'd with the result of user.has_perms to return
-        whether permission is successful
-        """
-        self.short_perm_codes = short_perm_codes
-        self.obj_getter = obj_getter
-        self.condition_checker = condition_checker
+from ..perm_def import DENY_ALL, PermDef, IS_AUTHENTICATED
 
 
 class PermissibleMixin(object):
@@ -51,7 +29,7 @@ class PermissibleMixin(object):
     view engines (e.g. DRF vs Django's admin) have different implementations for
     checking permissions, this mixin allows us to centralize the permissions
     configuration and keep the code clear and simple.
-    
+
     This mixin may be leveraged for DRF views by using `PermissiblePerms` in
     your viewsets, or in the Django admin by using `PermissibleAdminMixin`
     in your admin classes.
@@ -78,15 +56,7 @@ class PermissibleMixin(object):
         return [cls.get_permission_codename(sp) for sp in short_permissions]
 
     @classmethod
-    def has_global_and_create_permission(cls, user: PermissionsMixin, action: str, obj_dict=None):
-        if not cls.has_global_permission(user, action):
-            return False
-        if action == "create":
-            return cls.has_create_permission(user, obj_dict)
-        return True
-
-    @classmethod
-    def has_global_permission(cls, user: PermissionsMixin, action: str):
+    def has_global_permission(cls, user: PermissionsMixin, action: str, context=None):
         """
         Check if the provided user can access this action for this model, by checking
         the `global_action_perm_map`.
@@ -104,39 +74,30 @@ class PermissibleMixin(object):
 
         :param user:
         :param action:
+        :param context:
         :return:
         """
+        # Superusers override
+        if user and user.is_superuser:
+            return True
+
         perm_defs = cls.global_action_perm_map.get(action, None)
         if perm_defs is None:
             return True
 
         for perm_def in perm_defs:
-            perms = cls.get_permission_codenames(perm_def.short_perm_codes)
-            if user.has_perms(perms):
+            obj_check_passes = perm_def.check_condition(obj=None, user=user, context=context)
+            if perm_def.short_perm_codes is None:
+                has_perms = True
+            else:
+                perms = cls.get_permission_codenames(perm_def.short_perm_codes)
+                has_perms = user.has_perms(perms)
+            if has_perms and obj_check_passes:
                 return True
 
         return False
 
-    @classmethod
-    def has_create_permission(cls, user: PermissionsMixin, obj_dict=None):
-        """
-        Specifically for the "create" action, check if the provided user can do this,
-        the `obj_action_perm_map`. This is like `has_object_permissions` except
-        we have to create the object instance as we don't have it - we only have a
-        dict representing the object we want to create.
-
-        :param user:
-        :param obj_dict:
-        :return:
-        """
-
-        # Create temporary object (not for saving, just for permission checking)
-        obj = cls(**obj_dict)
-
-        # Run object permissions as usual
-        return obj.has_object_permission(user, "create")
-
-    def has_object_permission(self, user: PermissionsMixin, action: str):
+    def has_object_permission(self, user: PermissionsMixin, action: str, context=None):
         """
         Check if the provided user can access this action for this object, by checking
         the `obj_action_perm_map`. This check is done in ADDITION to the global check
@@ -159,25 +120,28 @@ class PermissibleMixin(object):
 
         :param user:
         :param action:
+        :param context:
         :return:
         """
         if not self.global_action_perm_map and not self.obj_action_perm_map:
             raise NotImplementedError("No permissions maps in `PermissibleMixin`, did you mean to define "
                                       "`obj_action_perm_map` on your model?")
 
+        # Superusers override
+        if user and user.is_superuser:
+            return True
+
+        context = context or dict()
+
         perm_defs = self.obj_action_perm_map.get(action, None)
         if perm_defs is None:
             return True
 
         for perm_def in perm_defs:
-            if perm_def.obj_getter:
-                obj = perm_def.obj_getter(self)
-            else:
-                obj = self
-            if perm_def.condition_checker:
-                obj_check_passes = perm_def.condition_checker(obj, user)
-            else:
-                obj_check_passes = True
+            obj = perm_def.get_obj(obj=self, context=context)
+            if not obj:
+                continue
+            obj_check_passes = perm_def.check_condition(obj=obj, user=user, context=context)
             if perm_def.short_perm_codes is None:
                 has_perms = True
             else:
@@ -188,7 +152,7 @@ class PermissibleMixin(object):
 
         return False
 
-    def get_permissions_root_obj(self) -> object:
+    def get_permissions_root_obj(self, context=None) -> object:
         """
         Convenience function to retrieve a root object against which permissions
         can be checked.
@@ -217,6 +181,36 @@ class PermissibleMixin(object):
         pk = nested_model_class.objects.filter(pk=nested_pk).values_list(field_name, flat=True)[0]
         return model_class(pk=pk)
 
+    @classmethod
+    def make_objs_from_data(cls, obj_dict_or_list: Union[Dict, List[Dict]]
+                            ) -> Union[object, List[object]]:
+        """
+        Turn data (usually request.data) into a model object (or a list of model
+        objects). Allows multiple objects to be built.
+
+        Helpful for non-detail, non-list actions (in particular, the "create"
+        action), to allow us to check if the provided user can do the action via
+        `obj_action_perm_map`.
+
+        :param obj_dict_or_list: Model data, in dictionary form (or list of
+        dictionaries).
+        :return: models.Model object (or list of such objects)
+        """
+        if isinstance(obj_dict_or_list, list):
+            return [cls._make_obj_from_data(obj_dict=d) for d in obj_dict_or_list]
+        return [cls._make_obj_from_data(obj_dict=obj_dict_or_list)]
+
+    @classmethod
+    def _make_obj_from_data(cls, obj_dict: Dict) -> object:
+        valid_fields = [f for f in cls._meta.get_fields()
+                        if not isinstance(f, (ForeignObjectRel, ManyToManyField))]
+        valid_dict_key_to_field_name = {f.name: f.attname for f in valid_fields}
+        valid_dict_key_to_field_name.update({f.attname: f.attname for f in valid_fields})
+        obj_dict = {valid_dict_key_to_field_name[f]: v
+                    for f, v in obj_dict.items()
+                    if f in valid_dict_key_to_field_name}
+        return cls(**obj_dict)
+
     @staticmethod
     def merge_action_perm_maps(*perm_maps):
         """
@@ -233,7 +227,36 @@ class PermissibleMixin(object):
         return result
 
 
-class PermissibleSelfOnlyMixin(object):
+class PermissibleAuthenticatedListingMixin(object):
+    global_action_perm_map = {
+        "list": [IS_AUTHENTICATED]
+    }
+
+
+class PermissibleDenyDefaultMixin(PermissibleAuthenticatedListingMixin, PermissibleMixin):
+    """
+    A default configuration of permissions that denies all standard DRF actions
+    on objects, and denies object listing to unauthenticated users.
+
+    Note that no global checks are done.
+    Note that no "list" permission checks are done (permissions checks should
+    instead be done on the root object, in the "list" action, via
+    `permissible.PermissibleRootFilter`).
+    """
+
+    obj_action_perm_map = {
+        "create": DENY_ALL,
+        "retrieve": DENY_ALL,
+        "update": DENY_ALL,
+        "partial_update": DENY_ALL,
+        "destroy": DENY_ALL,
+    }
+
+    def get_permissions_root_obj(self, context=None) -> object:
+        return None
+
+
+class PermissibleSelfOnlyMixin(PermissibleAuthenticatedListingMixin, PermissibleMixin):
     """
     A default configuration of permissions that ONLY checks for object-level
     permissions on the object that we are trying to access.
@@ -241,23 +264,23 @@ class PermissibleSelfOnlyMixin(object):
     Note that no global checks are done.
     Note that no "list" permission checks are done (inaccessible objects
     should be filtered out instead, using
-    `rest_framework_guardian.ObjectPermissionsFilter`).
-    Note that no "create" permission checks are done (cannot check object
-    permissions on an object that hasn't been created yet).
+    `permissible.filters.PermissibleFilter`).
+    No "create" permission, this should be overriden if needed.
     """
 
     obj_action_perm_map = {
+        "create": DENY_ALL,
         "retrieve": [PermDef(["view"])],
         "update": [PermDef(["change"])],
         "partial_update": [PermDef(["change"])],
-        "delete": [PermDef(["delete"])],
+        "destroy": [PermDef(["delete"])],
     }
 
-    def get_permissions_root_obj(self) -> object:
+    def get_permissions_root_obj(self, context=None) -> object:
         return self
 
 
-class PermissibleRootOnlyMixin(PermissibleMixin):
+class PermissibleRootOnlyMixin(PermissibleAuthenticatedListingMixin, PermissibleMixin):
     """
     A default configuration of permissions that ONLY checks for object-level
     permissions on the ROOT of the object that we are trying to access.
@@ -268,19 +291,19 @@ class PermissibleRootOnlyMixin(PermissibleMixin):
     Note that no global checks are done.
     Note that no "list" permission checks are done (permissions checks should
     instead be done on the root object, in the "list" action, via
-    `permissible.PermissibleRootPermissionsFilter`).
+    `permissible.PermissibleRootFilter`).
     """
 
     obj_action_perm_map = {
-        "create": [PermDef(["add_on"], obj_getter=PermissibleMixin.get_permissions_root_obj)],
-        "retrieve": [PermDef(["view"], obj_getter=PermissibleMixin.get_permissions_root_obj)],
-        "update": [PermDef(["change_on"], obj_getter=PermissibleMixin.get_permissions_root_obj)],
-        "partial_update": [PermDef(["change_on"], obj_getter=PermissibleMixin.get_permissions_root_obj)],
-        "delete": [PermDef(["change_on"], obj_getter=PermissibleMixin.get_permissions_root_obj)],
+        "create": [PermDef(["add_on"], obj_getter="get_permissions_root_obj")],
+        "retrieve": [PermDef(["view"], obj_getter="get_permissions_root_obj")],
+        "update": [PermDef(["change_on"], obj_getter="get_permissions_root_obj")],
+        "partial_update": [PermDef(["change_on"], obj_getter="get_permissions_root_obj")],
+        "destroy": [PermDef(["change_on"], obj_getter="get_permissions_root_obj")],
     }
 
 
-class PermissibleSelfOrRootMixin(PermissibleMixin):
+class PermissibleSelfOrRootMixin(PermissibleAuthenticatedListingMixin, PermissibleMixin):
     """
     A default configuration of permissions that checks for object-level
     permissions on BOTH the ROOT of the object that we are trying to access,

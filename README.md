@@ -37,9 +37,6 @@ that is taken on an object in the model (e.g. a "retrieve" action on a "survey")
 (We can also use classes like `PermissibleSelfOnlyMixin` to define good default
 permission maps for our models.)
 
-Remember to add any new permissions (beyond add, view, change, delete) to your
-model's `Meta.permissions` variable.
-
 With the permissions configured, now we can force different views to use them:
 - If you would like the permissions to work for API views (via
 django-rest-framework): Add `PermissiblePerms` to the `permission_classes` for

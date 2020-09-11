@@ -28,12 +28,21 @@ class PermissibleAdminMixin(object):
             "Must use `PermissibleMixin` on the model class"
 
         # Permission checks
-        if action == "create":
-            return self.model.has_global_and_create_permission(user=request.user, action=action, obj_dict=request.data)
-        elif not obj:
-            return self.model.has_global_permission(user=request.user, action=action)
-        else:
-            return obj.has_object_permission(user=request.user, action=action)
+        perm_check_kwargs = {
+            "user": request.user,
+            "action": action,
+            "context": {"request": request}
+        }
+        if not obj:
+            if not self.model.has_global_permission(**perm_check_kwargs):
+                return False
+            if action != "create":
+                # Not sure how we'd reach here...
+                return False
+            # For "create" action, we must create a dummy object from request data
+            # and use it to check permissions against
+            obj = self.model.make_objs_from_data(request.data)[0]
+        return obj.has_object_permission(**perm_check_kwargs)
 
     def has_add_permission(self, request, obj=None):
         return self._has_permission("create", request=request, obj=obj)
@@ -42,14 +51,18 @@ class PermissibleAdminMixin(object):
         return self._has_permission("update", request=request, obj=obj)
 
     def has_delete_permission(self, request, obj=None):
-        return self._has_permission("delete", request=request, obj=obj)
+        return self._has_permission("destroy", request=request, obj=obj)
 
     def has_view_permission(self, request, obj=None):
         return self._has_permission("retrieve", request=request, obj=obj) or \
                self._has_permission("update", request=request, obj=obj)
 
 
-class PermissibleGroupRootAdminMixin(object):
+class PermissibleObjectAssignMixin(object):
+    pass
+
+
+class PermissibleGroupRootMixin(object):
     def set_default_group_permissions(self, request, queryset):
         for group_root_obj in queryset:
             group_root_obj.set_permissions_for_group()

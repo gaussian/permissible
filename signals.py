@@ -6,13 +6,19 @@ Author: Kut Akdogan
 This codebase is confidential and proprietary.
 No license for use, viewing, or reproduction without explicit written permission.
 """
+from typing import Dict, List, Tuple
 
 from django.contrib.auth.models import Group
 from django.db import models
-from django.db.models.signals import m2m_changed
+from django.db.models.signals import m2m_changed, post_delete
 from django.dispatch import receiver
 
 from neutron.permissible.models import PermRootGroup, PermRootUser
+
+
+@receiver(post_delete, sender="accounts.TeamGroup", dispatch_uid="post_delete_team_group")
+def post_delete_team_group(sender, instance, **kwargs):
+    instance.group.delete()
 
 
 @receiver(m2m_changed, sender=Group.user_set.through, dispatch_uid='neutron_post_group_membership_changed')
@@ -28,54 +34,59 @@ def post_group_membership_changed(sender, action, instance, model, pk_set, **kwa
     if action not in ("post_add", "post_remove", "post_clear"):
         return
 
-    # Get reverse field name on the Group that ties to the PermRootGroup
-    group_root_fields = [field for field in Group._meta.get_fields()
-                         if isinstance(field, models.OneToOneRel) and isinstance(field.related_model, PermRootGroup)]
-    assert len(group_root_fields) == 1, f"The associated `PermRootGroup` for the `Group` model has " \
-                                        f"been set up incorrectly. Make sure the `PermRootGroup` child model " \
-                                        f"has one (and only one) OneToOneField to Django's `Group` model."
-    group_root_field = group_root_fields[0]
-    group_root_class = group_root_field.related_model
-
-    # Get the corresponding root IDs (e.g. team IDs) for the group IDs in the signal
-    root_ids = set(group_root_class.objects.filter(
-        group_id__in=pk_set
-    ).values_list(group_root_field.attname, flat=True))
-
-    # Get the PermRoot field
-    root_field = group_root_class.get_root_field()
-    root_class = root_field.related_model
-
-    # Finally, get the PermRootUser field/class (if one exists)
-    root_user_rels = [field for field in root_class._meta.get_fields()
-                      if isinstance(field, models.ManyToOneRel)
-                      and issubclass(field.related_model, PermRootUser)]
-    if not root_user_rels:
+    # Get all the PermRootGroup models
+    root_group_fields = [field for field in Group._meta.get_fields()
+                         if isinstance(field, models.OneToOneRel)
+                         and issubclass(field.related_model, PermRootGroup)]
+    if not root_group_fields:
         return
-    assert len(root_user_rels) == 1, f"The associated `PermRoot` for this model (`{root_class}`) has " \
-                                     f"been set up incorrectly. Make sure the `PermRoot` child model " \
-                                     f"has one (and only one) ForeignKey to the child {root_class} model."
-    root_user_rel = root_user_rels[0]
-    root_user_class = root_user_rel.related_model
 
-    # If adding a group to this user, make sure the PermRootUser record exists
-    if action == "post_add":
-        for root_id in root_ids:
-            root_user_class.objects.get_or_create(
-                user=user.id,
-                **{root_field.attname: root_id}
-            )
+    # If we are clearing all Groups, then must delete all PermRootUser records
+    # for this user, for all tables
+    if action == "post_clear":
+        for root_group_field in root_group_fields:
+            root_user_model_class = root_group_field.related_model.get_root_user_model_class()
+            qs = root_user_model_class.objects.filter(user=user)
+            qs.hard_delete() if hasattr(qs, "hard_delete") else qs.delete()
+        return
 
-    # If removing a group, check if this user is not part of any more groups that relate
-    # to these PermRoot - if not, delete the associated PermRootUser
-    # (e.g. delete the TeamUser if this user is no longer part of any groups for this Team)
-    if action in ("post_remove", "post_clear"):
+    # Otherwise, process each Group in turn
+    # root_model_classes = [cl.get_root_field().related_model for cl in root_group_model_classes]
+
+    # Get a mapping of each possible PermRootUser class to the PermRoot IDs for the
+    # relevant Groups, in the following format: {PermRootUser: (perm_root_id_fieldname, [perm_root_ids])}
+    # root_user_model_class_to_group_ids = dict()     # type: Dict[type, Tuple[str, List[int]]]
+
+    # Split the affected Groups into the specific PermRootUser models that they
+    # relate to, and get the PermRoot ID for those Groups
+    for root_group_field in root_group_fields:
+        root_group_model_class = root_group_field.related_model
+        root_id_field_name = root_group_model_class.get_root_field().attname
+        root_user_model_class = root_group_model_class.get_root_user_model_class()
+        root_ids = root_group_model_class.objects.filter(
+            group_id__in=pk_set
+        ).values_list(root_id_field_name, flat=True)
+
+        # Manage the individual PermRootUser record for this user and this PermRoot
         for root_id in root_ids:
-            num_group_root_records = user.groups.filter(
-                **{group_root_field.name + "__" + root_field.attname: root_id}
-            ).count()
-            if not num_group_root_records:
-                root_user_class.objects.filter(
-                    user=user.id,
-                    **{root_field.attname: root_id}
-                ).delete()
+            root_user_kwargs = {
+                "user_id": user.id,
+                root_id_field_name: root_id
+            }
+
+            # ADD:
+            # If we just added Group(s), make sure the PermRootUser record
+            if action == "post_add":
+                root_user_model_class.objects.get_or_create(**root_user_kwargs)
+
+            # REMOVE:
+            # If we just removed Group(s), check if this user is not part of any more
+            # Groups that relate to this PermRoot - if not, delete the associated
+            # PermRootUser (e.g. delete the TeamUser if this user is no longer part of
+            # any groups for this Team)
+            else:
+                num_related_user_groups = user.groups.filter(
+                    **{root_group_field.name + "__" + root_id_field_name: root_id}
+                ).count()
+                if not num_related_user_groups:
+                    root_user_model_class.objects.filter(**root_user_kwargs).delete()

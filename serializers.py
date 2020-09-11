@@ -6,6 +6,7 @@ Author: Kut Akdogan
 This codebase is confidential and proprietary.
 No license for use, viewing, or reproduction without explicit written permission.
 """
+from typing import Dict, Iterable
 
 from rest_framework.serializers import Serializer
 from rest_framework_guardian.serializers import ObjectPermissionsAssignmentMixin
@@ -21,18 +22,21 @@ class PermissibleObjectAssignMixin(ObjectPermissionsAssignmentMixin):
     NOTE: no add permission is created for this object, as that doesn't make
           sense either.
     """
-    def get_permissions_map(self, created):
+    def get_permissions_map(self, created) -> Dict[str, Iterable]:
         """
         Return a map where keys are permissions and values are list of users
         and/or groups.
         """
-        if created:
-            model_class = self.instance.__class__
-            django_short_perm_codes = ["view", "change", "delete"]
-            permissions = [model_class.get_permission_codename(pc) for pc in django_short_perm_codes]
-            extra_perms = [perm for perm, _ in model_class._meta.permissions]
-            return {perm: self.context["request"].user
-                    for perm in permissions + extra_perms}
+        exists = created
+        if exists:
+            return dict()
+
+        model_class = self.instance.__class__
+        django_short_perm_codes = ["view", "change", "delete"]
+        permissions = [model_class.get_permission_codename(pc) for pc in django_short_perm_codes]
+        extra_perms = [perm for perm, _ in model_class._meta.permissions]
+        return {perm: [self.context["request"].user]
+                for perm in permissions + extra_perms}
 
 
 class PermissibleRootObjectAssignMixin(Serializer):
@@ -44,11 +48,11 @@ class PermissibleRootObjectAssignMixin(Serializer):
     """
 
     def save(self, **kwargs):
-        created = self.instance is not None
+        exists = self.instance is not None
 
         result = super().save(**kwargs)
 
-        if created:
-            self.context["request"].user.groups.add(*list(self.instance.groups))
+        if not exists:
+            self.instance.add_user_to_groups(user=self.context["request"].user)
 
         return result

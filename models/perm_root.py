@@ -12,14 +12,24 @@ from abc import abstractmethod, ABCMeta
 from django.contrib.auth.models import Group
 from django.db import models
 
-from .permissible_mixin import PermissibleMixin, PermDef
+from .permissible_mixin import PermissibleMixin
+from ..perm_def import PermDef
+from ...db.metaclasses import ExtraPermModelMetaclass
 
 
-class AbstractModelBase(ABCMeta, models.base.ModelBase):
+class AbstractModelMetaclass(ABCMeta, models.base.ModelBase):
     pass
 
 
-class PermRoot(PermissibleMixin, metaclass=AbstractModelBase):
+class PermRootModelMetaclass(ExtraPermModelMetaclass, AbstractModelMetaclass):
+    permission_definitions = (
+        ("add_on_{}", "Can add related records onto {}"),
+        ("change_on_{}", "Can change related records on {}"),
+        ("change_permission_{}", "Can change permissions of {}"),
+    )
+
+
+class PermRoot(PermissibleMixin, models.Model, metaclass=PermRootModelMetaclass):
     """
     A model that has a corresponding `PermRootGroup` to associate it with a
     `Group` model, thereby extending the fields and functionality of the default
@@ -31,6 +41,9 @@ class PermRoot(PermissibleMixin, metaclass=AbstractModelBase):
     - a `ForeignKey to the `PermRoot` model
     - `groups`, a `ManyToManyField` to the Group model
     """
+
+    class Meta:
+        abstract = True
 
     @property
     @abstractmethod
@@ -58,10 +71,12 @@ class PermRoot(PermissibleMixin, metaclass=AbstractModelBase):
         :param kwargs:
         :return:
         """
+        adding = self._state.adding
+
         super().save(*args, **kwargs)
 
         # For new root objects, create the necessary groups/join objects
-        if self._state.adding:
+        if adding:
             self.create_groups()
 
     def create_groups(self):
@@ -69,29 +84,50 @@ class PermRoot(PermissibleMixin, metaclass=AbstractModelBase):
         Create the associated `PermRootGroup` and `Group` objects for this
         `PermRoot`.
         """
-        # Find the join relation for the PermRootGroup relation
-        join_rel = self.get_group_join_rel()
+        # Find the PermRootGroup model
+        root_group_model_class = self.get_group_join_rel().related_model
 
         # Create PermRootGroup for each role in possible roles
-        join_model = join_rel.related_model
-        for role, _ in join_model._meta.get_field("role").choices:
-            join_model.objects.get_or_create(
+        for role, _ in root_group_model_class._meta.get_field("role").choices:
+            root_group_model_class.objects.get_or_create(
                 role=role,
                 **{self._meta.model_name: self}
             )
 
-    def get_group_join_rel(self) -> models.ManyToOneRel:
+    def add_user_to_groups(self, user, roles=None):
+        root_group_model_class = self.get_group_join_rel().related_model
+        roles = roles or [role for role, _ in root_group_model_class._meta.get_field("role").choices]
+        group_ids = root_group_model_class.objects.filter(
+            role__in=roles,
+            **{self._meta.model_name: self}
+        ).values_list("group_id", flat=True)
+        user.groups.add(*group_ids)
+
+    @classmethod
+    def get_group_join_rel(cls) -> models.ManyToOneRel:
         """
         Find the join relation for the (one and only one) `PermRootGroup`
         relation
         """
-        join_rels = [field for field in self._meta.get_fields()
-                     if isinstance(field, models.ManyToOneRel)
-                     and issubclass(field.related_model, PermRootGroup)]
+        return cls._get_join_rel(PermRootGroup)
 
-        assert len(join_rels) == 1, f"The associated `PermRootGroup` for this model (`{self.__class__}`) has " \
+    @classmethod
+    def get_user_join_rel(cls) -> models.ManyToOneRel:
+        """
+        Find the join relation for the (one and only one) `PermRootUser`
+        relation
+        """
+        return cls._get_join_rel(PermRootUser)
+
+    @classmethod
+    def _get_join_rel(cls, subclass) -> models.ManyToOneRel:
+        join_rels = [field for field in cls._meta.get_fields()
+                     if isinstance(field, models.ManyToOneRel)
+                     and issubclass(field.related_model, subclass)]
+
+        assert len(join_rels) == 1, f"The associated `{subclass}` for this model (`{cls}`) has " \
                                     f"been set up incorrectly. Make sure there is one (and only one) " \
-                                    f"`PermRootGroup` model with a ForeignKey to `{self.__class__}`"
+                                    f"`{subclass}` model with a ForeignKey to `{cls}`"
 
         return join_rels[0]
 
@@ -99,22 +135,11 @@ class PermRoot(PermissibleMixin, metaclass=AbstractModelBase):
         return self.get_group_join_rel().related_model.objects.filter(role="mem")
 
 
-class PermRootFieldModelMixin(PermissibleMixin):
-    perm_def_self = PermDef(None, condition_checker=lambda o, u: o.user_id == u.id)
-    perm_def_admin = PermDef(["change_permission"], obj_getter=PermissibleMixin.get_permissions_root_obj)
-    perm_defs = [perm_def_self, perm_def_admin]
-
-    obj_action_perm_map = {
-        "retrieve": perm_defs,
-        "update": perm_defs,
-        "partial_update": perm_defs,
-        "delete": [perm_def_admin],
-    }
-
+class PermRootFieldModelMixin(object):
     @classmethod
     def get_root_field(cls) -> models.ForeignKey:
         """
-        Find the root field for the (one and only one) `PermRootBase`
+        Find the root field for the (one and only one) `PermRoot`
         foreign-key relation
         """
         root_fields = [field for field in cls._meta.get_fields()
@@ -127,8 +152,13 @@ class PermRootFieldModelMixin(PermissibleMixin):
 
         return root_fields[0]
 
-    def get_permissions_root_obj(self) -> object:
-        return self.get_unretrieved(self.get_root_field().name)
+
+def build_role_field(role_definitions):
+    return models.CharField(choices=((role_value, role_label)
+                                     for role_value, (role_label, _) in role_definitions.items()),
+                            max_length=4, default="mem",
+                            help_text="This defines the role of the associated Group, allowing "
+                                      "permissions to function more in line with RBAC.")
 
 
 class PermRootGroup(PermRootFieldModelMixin, models.Model):
@@ -161,20 +191,18 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
     # 0: role value (for DB)
     # 1: role label
     # 2: default object permissions given to the associated Group (in short form, e.g. "view")
+    # NOTE: any child function overriding `ROLE_DEFINITIONS` must redefine `role` like the below
     ROLE_DEFINITIONS = {
         "mem": ("Member", []),
         "view": ("Viewer", ["view"]),
-        "con": ("Contributor", ["view", "add_on", "change_on"]),
+        "con": ("Contributor", ["view", "add_on", "change_on", "change"]),
         "adm": ("Admin", ["view", "add_on", "change_on", "change", "change_permission"]),
         "own": ("Owner", ["view", "add_on", "change_on", "change", "change_permission", "delete"]),
     }
 
-    # Role
-    role = models.CharField(choices=((role_value, role_label)
-                                     for role_value, (role_label, _) in ROLE_DEFINITIONS.items()),
-                            max_length=4, default="mem",
-                            help_text="This defines the role of the associated Group, allowing "
-                                      "permissions to function more in line with RBAC.")
+    # Role field (must call this function to override the field choices correctly in child classes)
+    # NOTE: any child function overriding `ROLE_DEFINITIONS` must redefine `role` like the below
+    role = build_role_field(ROLE_DEFINITIONS)
 
     class Meta:
         abstract = True
@@ -182,7 +210,7 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
     def __str__(self):
         root_field = self.get_root_field()
         root_obj = getattr(self, root_field.name)
-        return f"[{self.role}] {root_obj}"
+        return f"[{self.role}] {root_obj} - {root_obj.id}"
 
     def set_permissions_for_group(self):
         """
@@ -228,12 +256,21 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
 
         return super().save(*args, **kwargs)
 
-    def get_permissions_root_obj(self) -> object:
+    @classmethod
+    def get_root_user_model_class(cls) -> models.Model:
+        """
+        Find the model class for the (one and only one) `PermRootUser` model,
+        found via the `PermRoot` foreign-key relation
+        """
+        root_model_class = cls.get_root_field().related_model
+        return root_model_class.get_user_join_rel().related_model
+
+    def get_permissions_root_obj(self, context=None) -> object:
         """This object is the root itself."""
         return self
 
 
-class PermRootUser(PermRootFieldModelMixin, metaclass=AbstractModelBase):
+class PermRootUser(PermRootFieldModelMixin, PermissibleMixin, metaclass=AbstractModelMetaclass):
     """
     A model that acts at the through table between the `PermRoot` and `User`
     models.
@@ -251,6 +288,17 @@ class PermRootUser(PermRootFieldModelMixin, metaclass=AbstractModelBase):
     - `user`, a `ForeignKey` to the user model
     """
 
+    perm_def_self = PermDef(None, condition_checker=lambda o, u: o.user_id == u.id)
+    perm_def_admin = PermDef(["change_permission"], obj_getter="get_permissions_root_obj")
+    perm_defs = [perm_def_self, perm_def_admin]
+
+    obj_action_perm_map = {
+        "retrieve": perm_defs,
+        "update": perm_defs,
+        "partial_update": perm_defs,
+        "destroy": [perm_def_admin],
+    }
+
     @property
     @abstractmethod
     def user(self):
@@ -263,3 +311,6 @@ class PermRootUser(PermRootFieldModelMixin, metaclass=AbstractModelBase):
         root_field = self.get_root_field()
         root_obj = getattr(self, root_field.name)
         return f"{root_obj} / {self.user}"
+
+    def get_permissions_root_obj(self, context=None) -> object:
+        return self.get_unretrieved("user")
