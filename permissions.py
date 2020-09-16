@@ -83,7 +83,7 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
             if obj._state.adding:
                 return False
 
-            if request.method in SAFE_METHODS:
+            if view.action in ("retrieve",):
                 # Read permissions already checked and failed, no need
                 # to make another lookup.
                 raise Http404

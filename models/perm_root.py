@@ -131,8 +131,9 @@ class PermRoot(PermissibleMixin, models.Model, metaclass=PermRootModelMetaclass)
 
         return join_rels[0]
 
-    def get_member_group_qs(self):
-        return self.get_group_join_rel().related_model.objects.filter(role="mem")
+    def get_member_group_id(self):
+        group_join_attr_name = self.get_group_join_rel().related_name
+        return getattr(self, group_join_attr_name).filter(role="mem").first().group_id
 
 
 class PermRootFieldModelMixin(object):
