@@ -49,8 +49,17 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
         }
         if not model_class.has_global_permission(**perm_check_kwargs):
             return False
-        if not view.detail and view.action != "list":
-            # For actions that have no instance (i.e. detail=False, e.g. "create"),
+        if view.action == "list":
+            # For list actions, as they have no instance and also contain no true
+            # data, we create a dummy object using the request query params, which
+            # may be checked using object permissions
+            return self.has_object_permission(
+                request=request,
+                view=view,
+                obj=model_class.make_dummy_obj_from_query_params(request.query_params)
+            )
+        elif not view.detail:
+            # For other actions that have no instance (i.e. detail=False, e.g. "create"),
             # we must create a dummy object from request data and pass it into
             # `has_object_permission`, as this function will normally not be called
             # NOTE: multiple objects are allowed, hence the list of objects checked

@@ -188,6 +188,21 @@ class PermissibleMixin(ShortPermsMixin):
                     if f in valid_dict_key_to_field_name}
         return cls(**obj_dict)
 
+    @classmethod
+    def make_dummy_obj_from_query_params(cls, param_dict: dict) -> object:
+        """
+        Turn query parameters (usually request.query_params) into a dummy object.
+
+        Helpful for "list" action, to allow us to check if the provided user can
+        do the action on a related object, as defined in `obj_action_perm_map`.
+
+        :param param_dict: Parameters, in dictionary form.
+        :return: models.Model object (or list of such objects)
+        """
+        obj = cls()
+        [setattr(obj, k, v) for k, v in param_dict.items()]
+        return obj
+
     @staticmethod
     def merge_action_perm_maps(*perm_maps):
         """
@@ -240,8 +255,7 @@ class PermissibleSelfOnlyMixin(PermissibleAuthenticatedListingMixin, Permissible
 
     Note that no global checks are done.
     Note that no "list" permission checks are done (inaccessible objects
-    should be filtered out instead, using
-    `permissible.filters.PermissibleFilter`).
+    should be filtered out instead).
     No "create" permission, this should be overriden if needed.
     """
 
@@ -266,13 +280,11 @@ class PermissibleRootOnlyMixin(PermissibleAuthenticatedListingMixin, Permissible
     permission on the original (child) object.
 
     Note that no global checks are done.
-    Note that no "list" permission checks are done (permissions checks should
-    instead be done on the root object, in the "list" action, via
-    `permissible.PermissibleRootFilter`).
     """
 
     obj_action_perm_map = {
         "create": [PermDef(["add_on"], obj_getter="get_permissions_root_obj")],
+        "list": [PermDef(["view"], obj_getter="get_permissions_root_obj")],
         "retrieve": [PermDef(["view"], obj_getter="get_permissions_root_obj")],
         "update": [PermDef(["change_on"], obj_getter="get_permissions_root_obj")],
         "partial_update": [PermDef(["change_on"], obj_getter="get_permissions_root_obj")],
