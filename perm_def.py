@@ -1,6 +1,16 @@
 from typing import List, Union, Optional, Callable
 
 
+class ShortPermsMixin(object):
+    @classmethod
+    def get_permission_codename(cls, short_permission):
+        return f"{cls._meta.app_label}.{short_permission}_{cls._meta.model_name}"
+
+    @classmethod
+    def get_permission_codenames(cls, short_permissions):
+        return [cls.get_permission_codename(sp) for sp in short_permissions]
+
+
 class PermDef:
     """
     A simple data structure to hold instructions for permissions configuration.
@@ -13,7 +23,7 @@ class PermDef:
     """
 
     def __init__(self, short_perm_codes: Optional[List[str]],
-                 obj_getter: Optional[Union[Callable[[object, object], object], str]] = None,
+                 obj_getter: Optional[Union[Callable[[object, object], ShortPermsMixin], str]] = None,
                  condition_checker: Optional[Union[Callable[[object, object, object], bool], str]] = None):
         """
         Initialize.
@@ -28,7 +38,43 @@ class PermDef:
         self.obj_getter = obj_getter
         self.condition_checker = condition_checker
 
-    def get_obj(self, obj, context=None) -> object:
+    def check_global(self, user, context=None):
+        """
+        Check global permissions
+        :return:
+        """
+        return self._check(is_obj=False, obj=None, user=user, context=context)
+
+    def check_obj(self, obj: ShortPermsMixin, user, context=None):
+        """
+        Check object permissions
+        :return:
+        """
+        return self._check(is_obj=True, obj=obj, user=user, context=context)
+
+    def _check(self, is_obj: bool, obj: Optional[ShortPermsMixin], user, context=None):
+        """
+        """
+        # Try to get the necessary object (if object-level permissions, fail if no obj found)
+        obj = self.get_obj(obj=obj, context=context)
+        if is_obj and not obj:
+            return False
+
+        # Check the "condition checker"
+        obj_check_passes = self.check_condition(obj=obj, user=user, context=context)
+
+        # Check permissions
+        if self.short_perm_codes is None:
+            has_perms = True
+        else:
+            perms = obj.get_permission_codenames(self.short_perm_codes)
+            has_perms = user.has_perms(perms, obj)
+
+        # Both `has_perms` and `check_condition` must have passed
+        if has_perms and obj_check_passes:
+            return True
+
+    def get_obj(self, obj: ShortPermsMixin, context=None) -> ShortPermsMixin:
         """
         Using the provided object and context, return the actual object for which we will
         be checking permissions.

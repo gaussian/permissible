@@ -15,10 +15,10 @@ from django.contrib.auth.models import PermissionsMixin
 from django.db.models.fields.related import RelatedField, ManyToManyField
 from django.db.models.fields.reverse_related import ForeignObjectRel
 
-from ..perm_def import DENY_ALL, PermDef, IS_AUTHENTICATED
+from ..perm_def import ShortPermsMixin, PermDef, DENY_ALL, IS_AUTHENTICATED
 
 
-class PermissibleMixin(object):
+class PermissibleMixin(ShortPermsMixin):
     """
     Model mixin that allows a model to check permissions, in accordance with
     simple dictionaries (`global_action_perm_map` and `obj_action_perm_map`)
@@ -46,14 +46,6 @@ class PermissibleMixin(object):
     # See description above
     global_action_perm_map = {}     # type: Dict[str, List[PermDef]]
     obj_action_perm_map = {}        # type: Dict[str, List[PermDef]]
-
-    @classmethod
-    def get_permission_codename(cls, short_permission):
-        return f"{cls._meta.app_label}.{short_permission}_{cls._meta.model_name}"
-
-    @classmethod
-    def get_permission_codenames(cls, short_permissions):
-        return [cls.get_permission_codename(sp) for sp in short_permissions]
 
     @classmethod
     def has_global_permission(cls, user: PermissionsMixin, action: str, context=None):
@@ -86,13 +78,7 @@ class PermissibleMixin(object):
             return True
 
         for perm_def in perm_defs:
-            obj_check_passes = perm_def.check_condition(obj=None, user=user, context=context)
-            if perm_def.short_perm_codes is None:
-                has_perms = True
-            else:
-                perms = cls.get_permission_codenames(perm_def.short_perm_codes)
-                has_perms = user.has_perms(perms)
-            if has_perms and obj_check_passes:
+            if perm_def.check_global(user=user, context=context):
                 return True
 
         return False
@@ -138,16 +124,7 @@ class PermissibleMixin(object):
             return True
 
         for perm_def in perm_defs:
-            obj = perm_def.get_obj(obj=self, context=context)
-            if not obj:
-                continue
-            obj_check_passes = perm_def.check_condition(obj=obj, user=user, context=context)
-            if perm_def.short_perm_codes is None:
-                has_perms = True
-            else:
-                perms = obj.get_permission_codenames(perm_def.short_perm_codes)
-                has_perms = user.has_perms(perms, obj)
-            if has_perms and obj_check_passes:
+            if perm_def.check_obj(obj=self, user=user, context=context):
                 return True
 
         return False
