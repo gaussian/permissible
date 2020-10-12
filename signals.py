@@ -6,16 +6,16 @@ Author: Kut Akdogan
 This codebase is confidential and proprietary.
 No license for use, viewing, or reproduction without explicit written permission.
 """
-from typing import Dict, List, Tuple
 
 from django.contrib.auth.models import Group
 from django.db import models
 from django.db.models.signals import m2m_changed, post_delete
 from django.dispatch import receiver
 
-from neutron.permissible.models import PermRootGroup, PermRootUser
+from neutron.permissible.models import PermRootGroup
 
 
+# TODO: can we make this generic, for all PermRootGroup models?
 @receiver(post_delete, sender="accounts.TeamGroup", dispatch_uid="post_delete_team_group")
 def post_delete_team_group(sender, instance, **kwargs):
     instance.group.delete()

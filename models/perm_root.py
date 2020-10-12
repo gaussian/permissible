@@ -14,7 +14,8 @@ from django.db import models
 
 from .permissible_mixin import PermissibleMixin
 from ..perm_def import PermDef
-from ...db.metaclasses import ExtraPermModelMetaclass
+from neutron.db.metaclasses import ExtraPermModelMetaclass
+from neutron.utils.signals import get_subclasses
 
 
 class AbstractModelMetaclass(ABCMeta, models.base.ModelBase):
@@ -131,9 +132,27 @@ class PermRoot(PermissibleMixin, models.Model, metaclass=PermRootModelMetaclass)
 
         return join_rels[0]
 
-    def get_member_group_id(self):
+    def get_user_joins(self):
+        user_join_attr_name = self.get_user_join_rel().related_name
+        return getattr(self, user_join_attr_name)
+
+    def get_group_joins(self):
         group_join_attr_name = self.get_group_join_rel().related_name
-        return getattr(self, group_join_attr_name).filter(role="mem").first().group_id
+        return getattr(self, group_join_attr_name)
+
+    def get_member_group_id(self):
+        group_join_obj = self.get_group_joins().filter(role="mem").first()
+        if group_join_obj:
+            return group_join_obj.group_id
+        return None
+
+    def copy_related_records(self, new_obj):
+        remote_field_name = self.get_group_join_rel().remote_field.attname
+        for group_join_obj in self.get_group_joins().all():
+            group_join_obj.pk = None
+            group_join_obj.group_id = None
+            setattr(group_join_obj, remote_field_name, new_obj.pk)
+            group_join_obj.save()
 
 
 class PermRootFieldModelMixin(object):
@@ -245,7 +264,7 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
         """
 
         # Create Group before adding a PermRootGroup
-        if self._state.adding and not self.group_id:
+        if not self.group_id:
             group = Group(
                 name=str(self)
             )
@@ -256,6 +275,15 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
             self.set_permissions_for_group()
 
         return super().save(*args, **kwargs)
+
+    # TODO: handling this in permissible.signals, but it isn't generic enough...
+    # def delete(self, *args, **kwargs):
+    #     """
+    #     Upon deleting a PermRootGroup, delete the connected Group
+    #     """
+    #     group = self.group
+    #     super().delete(*args, **kwargs)
+    #     group.delete()
 
     @classmethod
     def get_root_user_model_class(cls) -> models.Model:
@@ -269,6 +297,16 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
     def get_permissions_root_obj(self, context=None) -> object:
         """This object is the root itself."""
         return self
+
+    @staticmethod
+    def get_root_obj(group_id: int) -> "PermRootGroup":
+        all_perm_root_group_classes = get_subclasses(PermRootGroup)
+        for perm_root_group_class in all_perm_root_group_classes:
+            root_field = perm_root_group_class.get_root_field()
+            root_id_field_name = root_field.attname
+            root_id = perm_root_group_class.objects.filter(group_id=group_id).values_list(root_id_field_name)[:1]
+            if root_id:
+                return root_field.related_model(pk=root_id)
 
 
 class PermRootUser(PermRootFieldModelMixin, PermissibleMixin, metaclass=AbstractModelMetaclass):
@@ -289,7 +327,7 @@ class PermRootUser(PermRootFieldModelMixin, PermissibleMixin, metaclass=Abstract
     - `user`, a `ForeignKey` to the user model
     """
 
-    perm_def_self = PermDef(None, condition_checker=lambda o, u: o.user_id == u.id)
+    perm_def_self = PermDef(None, condition_checker=lambda o, u, c: o.user_id == u.id)
     perm_def_admin = PermDef(["change_permission"], obj_getter="get_permissions_root_obj")
     perm_defs = [perm_def_self, perm_def_admin]
 
