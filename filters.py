@@ -41,15 +41,23 @@ class PermissibleRootFilter(filters.BaseFilterBackend):
         assert not any("__" in f for f in view.filter_perm_fields), \
             f"Cannot yet accommodate joined fields in `PermissibleRootFilter`: {view.filter_perm_fields}"
 
-        model_class = queryset.model
-
         # For each "permission" field, check permissions, then filter the queryset
-        for perm_filterset_field, needed_short_perm_code in view.filter_perm_fields:
+        for perm_filterset_fields, needed_short_perm_code in view.filter_perm_fields:
 
-            # Get related object (e.g. "Team" from "team_id")
-            related_model = getattr(model_class, perm_filterset_field).field.related_model
-            related_pk = request.query_params.get(perm_filterset_field)
-            related_obj = related_model(pk=related_pk)
+            # Get related object (e.g. "Team" from "team_id"), nested if need be
+            model_class = queryset.model
+            related_obj = None
+            if not isinstance(perm_filterset_fields, (tuple, list)):
+                perm_filterset_fields = (perm_filterset_fields,)
+            for i, perm_filterset_field in enumerate(perm_filterset_fields):
+                related_model = getattr(model_class, perm_filterset_field).field.related_model
+                if i == 0:
+                    related_pk = request.query_params.get(perm_filterset_field)
+                else:
+                    related_obj.refresh_from_db()
+                    related_pk = getattr(related_obj, perm_filterset_field)
+                related_obj = related_model(pk=related_pk)
+                model_class = related_model
 
             # Check permission for related object
             perm = f"{related_model._meta.app_label}.{needed_short_perm_code}_{related_model._meta.model_name}"
