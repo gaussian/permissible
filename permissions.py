@@ -49,7 +49,8 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
         }
         if not model_class.has_global_permission(**perm_check_kwargs):
             return False
-        if view.action == "list":
+        list_actions = getattr(view, "LIST_ACTIONS", ("list",))
+        if view.action in list_actions:
             # For list actions, as they have no instance and also contain no true
             # data, we create a dummy object using the request query params, which
             # may be checked using object permissions
