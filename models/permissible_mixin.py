@@ -148,15 +148,17 @@ class PermissibleMixin(ShortPermsMixin):
         pk = getattr(self, field.attname)
         return model_class(pk=pk)
 
-    def get_unretrieved_nested(self, attr_name, attr_name_nested):
+    def get_unretrieved_nested(self, parent_attr_name, attr_name):
         field = getattr(self.__class__, attr_name).field
         model_class = field.related_model
-        field_name = field.attname
-        nested_field = getattr(self.__class__, attr_name_nested).field
-        nested_model_class = nested_field.related_model
-        nested_pk = getattr(self, nested_field.attname)
-        pk = nested_model_class.objects.filter(pk=nested_pk).values_list(field_name, flat=True)[0]
-        return model_class(pk=pk)
+        pk = getattr(self, field.attname)
+
+        parent_field = getattr(model_class, parent_attr_name).field
+        parent_field_name = parent_field.attname
+        parent_pk = model_class.objects.filter(pk=pk).values_list(parent_field_name, flat=True)[0]
+        parent_model_class = parent_field.related_model
+
+        return parent_model_class(pk=parent_pk)
 
     @classmethod
     def make_objs_from_data(cls, obj_dict_or_list: Union[Dict, List[Dict]]
