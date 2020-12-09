@@ -50,7 +50,7 @@ class PermissibleRootFilter(filters.BaseFilterBackend):
             if not isinstance(perm_filterset_fields, (tuple, list)):
                 perm_filterset_fields = (perm_filterset_fields,)
             for i, perm_filterset_field in enumerate(perm_filterset_fields):
-                related_model = getattr(model_class, perm_filterset_field).field.related_model
+                related_model = model_class._meta.get_field(perm_filterset_field).related_model
                 if i == 0:
                     related_pk = request.query_params.get(perm_filterset_field)
                 else:
