@@ -15,7 +15,7 @@ from django.contrib.auth.models import PermissionsMixin
 from django.db.models.fields.related import RelatedField, ManyToManyField
 from django.db.models.fields.reverse_related import ForeignObjectRel
 
-from ..perm_def import ShortPermsMixin, PermDef, DENY_ALL, IS_AUTHENTICATED
+from ..perm_def import ShortPermsMixin, PermDef, DENY_ALL, IS_AUTHENTICATED, ALLOW_ALL
 
 
 class PermissibleMixin(ShortPermsMixin):
@@ -271,6 +271,26 @@ class PermissibleSelfOnlyMixin(PermissibleAuthenticatedListingMixin, Permissible
 
     def get_permissions_root_obj(self, context=None) -> object:
         return self
+
+
+class PermissibleSelfOnlyWithGlobalCreateMixin(PermissibleSelfOnlyMixin):
+    """
+    A default configuration of permissions that ONLY checks for object-level
+    permissions on the object that we are trying to access, and additionally
+    allows creation if the global "add" permission exists for this user.
+
+    Note that no "list" permission checks are done (inaccessible objects
+    should be filtered out instead).
+    """
+
+    global_action_perm_map = {
+        "create": PermDef(["add"]),
+    }
+
+    obj_action_perm_map = {
+        **PermissibleSelfOnlyMixin.obj_action_perm_map,
+        "create": ALLOW_ALL,
+    }
 
 
 class PermissibleRootOnlyMixin(PermissibleAuthenticatedListingMixin, PermissibleMixin):
