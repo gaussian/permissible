@@ -309,7 +309,7 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
                 return root_field.related_model(pk=root_id)
 
 
-class PermRootUser(PermRootFieldModelMixin, PermissibleMixin, metaclass=AbstractModelMetaclass):
+class PermRootUser(PermRootFieldModelMixin, PermissibleMixin, models.Model, metaclass=AbstractModelMetaclass):
     """
     A model that acts at the through table between the `PermRoot` and `User`
     models.
@@ -326,6 +326,9 @@ class PermRootUser(PermRootFieldModelMixin, PermissibleMixin, metaclass=Abstract
     - a `ForeignKey to the `PermRoot` model
     - `user`, a `ForeignKey` to the user model
     """
+
+    class Meta:
+        abstract = True
 
     perm_def_self = PermDef(None, condition_checker=lambda o, u, c: o.user_id == u.id)
     perm_def_admin = PermDef(["change_permission"], obj_getter="get_permissions_root_obj")
