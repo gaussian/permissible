@@ -75,7 +75,7 @@ def post_group_membership_changed(sender, action, instance, model, pk_set, **kwa
             }
 
             # ADD:
-            # If we just added Group(s), make sure the PermRootUser record
+            # If we just added Group(s), make sure the PermRootUser record exists
             if action == "post_add":
                 root_user_model_class.objects.get_or_create(**root_user_kwargs)
 
