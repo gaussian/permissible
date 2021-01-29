@@ -155,7 +155,12 @@ class PermissibleMixin(ShortPermsMixin):
 
         parent_field = getattr(model_class, parent_attr_name).field
         parent_field_name = parent_field.attname
-        parent_pk = model_class.objects.filter(pk=pk).values_list(parent_field_name, flat=True)[0]
+        # NOTE because we use `objects` instead of `all_objects`, this removes
+        #      inactive parent objects, as desired
+        parent_pks = model_class.objects.filter(pk=pk).values_list(parent_field_name, flat=True)
+        if not parent_pks:
+            return None
+        parent_pk = parent_pks[0]
         parent_model_class = parent_field.related_model
 
         return parent_model_class(pk=parent_pk)
