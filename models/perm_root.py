@@ -230,8 +230,9 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
     def __str__(self):
         root_field = self.get_root_field()
         root_obj = getattr(self, root_field.name)
-        root_model_class_name = root_field.related_model.__name__
-        return f"[{self.role}][{root_model_class_name}] {root_obj} - {root_obj.id}"
+        root_obj_class = root_field.related_model
+        class_label = root_obj_class._meta.app_label + "." + root_obj_class.__name__
+        return f"[{self.role}][{class_label}] {root_obj} [{root_obj.id}]"
 
     def set_permissions_for_group(self):
         """
