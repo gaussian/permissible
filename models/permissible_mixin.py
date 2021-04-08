@@ -319,6 +319,30 @@ class PermissibleRootOnlyMixin(PermissibleAuthenticatedListingMixin, Permissible
     }
 
 
+class PermissibleBasicRootOnlyMixin(PermissibleAuthenticatedListingMixin, PermissibleMixin):
+    """
+    A alternative configuration of permissions that ONLY checks for object-level
+    permissions on the ROOT of the object that we are trying to access.
+
+    Note that having "change" permission on the root object confers "create"
+    permission on the original (child) object.
+
+    Note that no global checks are done.
+
+    Note that this class is very similar to `PermissibleRootOnlyMixin`, except it
+    doesn't require the "add_on_XXX" and "change_on_XXX" permissions.
+    """
+
+    obj_action_perm_map = {
+        "create": [PermDef(["change"], obj_getter="get_permissions_root_obj")],
+        "list": [PermDef(["view"], obj_getter="get_permissions_root_obj")],
+        "retrieve": [PermDef(["view"], obj_getter="get_permissions_root_obj")],
+        "update": [PermDef(["change"], obj_getter="get_permissions_root_obj")],
+        "partial_update": [PermDef(["change"], obj_getter="get_permissions_root_obj")],
+        "destroy": [PermDef(["change"], obj_getter="get_permissions_root_obj")],
+    }
+
+
 class PermissibleSelfOrRootMixin(PermissibleAuthenticatedListingMixin, PermissibleMixin):
     """
     A default configuration of permissions that checks for object-level
