@@ -146,6 +146,8 @@ class PermRoot(PermissibleMixin, models.Model, metaclass=PermRootModelMetaclass)
             return group_join_obj.group_id
         return None
 
+    # TODO: delete this, not needed as the PermRootGroup models are created on
+    #      `PermRoot.save()` anyway
     def copy_related_records(self, new_obj):
         remote_field_name = self.get_group_join_rel().remote_field.attname
         for group_join_obj in self.get_group_joins().all():
