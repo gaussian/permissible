@@ -122,7 +122,7 @@ class PermRootAdminMixin(object):
         ] for perm_root_group in obj.get_group_joins().all()}
 
         context = {
-            "title": "Add users to permissible groups",
+            "title": f"Add users to permissible groups of {obj}",
             "form": form,
             "role_to_users": role_to_users,
             "opts": self.model._meta,
@@ -132,12 +132,12 @@ class PermRootAdminMixin(object):
         return TemplateResponse(request, "admin/permissible_changeform.html", context)
 
     readonly_fields = (
-        "permissible_link",
+        "permissible_groups_link",
     )
 
     def get_permissible_change_url_name(self):
         return "%s_%s_permissible_change" % (self.model._meta.app_label, self.model._meta.model_name)
 
-    def permissible_link(self, obj):
+    def permissible_groups_link(self, obj):
         url_for_link = reverse("admin:" + self.get_permissible_change_url_name(), args=(obj.pk,))
         return get_url_as_link(url_for_link, str(obj), check_for_http=False, new_window=False)
