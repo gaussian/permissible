@@ -70,8 +70,7 @@ You can then simply adjust your permissions maps in `PermissibleMixin` to
 incorporate checking of the root model for permissions. See the documentation for
 `PermDef` and `PermissibleMixin.has_object_permissions` for info and examples.
 
-You can also use `PermissibleGroupRootMixin` to help you manage the
-`PermRootGroup` records.
+You can also use `PermRootAdminMixin` to help you manage the `PermRoot` records.
 
 
 ## Feature 3: Assignment on record creation
