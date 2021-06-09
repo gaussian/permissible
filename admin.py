@@ -10,6 +10,7 @@ No license for use, viewing, or reproduction without explicit written permission
 from django.contrib.auth import get_user_model
 from django import forms
 from django.contrib.auth.models import Group
+from django.http import Http404
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 
@@ -100,7 +101,11 @@ class PermRootAdminMixin(object):
     def permissible_view(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
 
-        # TODO: allow this for users that have appropriate permissions, perhaps by setting self.has_permission() (see self.admin_site.admin_view())
+        # TODO: need to have "change_permission" permission, not just "change"
+        if not self.has_change_permission(request=request, obj=obj):
+            raise Http404("Lacking permission")
+
+        # TODO: once the above permission is fixed, remove the superuser requirement
         if request.method == "POST" and request.user.is_superuser:
             form = PermRootForm(self.model, request.POST)
             if form.is_valid():
@@ -140,4 +145,4 @@ class PermRootAdminMixin(object):
 
     def permissible_groups_link(self, obj):
         url_for_link = reverse("admin:" + self.get_permissible_change_url_name(), args=(obj.pk,))
-        return get_url_as_link(url_for_link, str(obj), check_for_http=False, new_window=False)
+        return get_url_as_link(url_for_link, "Edit permissible groups", check_for_http=False, new_window=False)
