@@ -193,7 +193,10 @@ class PermissibleMixin(ShortPermsMixin):
         obj_dict = {valid_dict_key_to_field_name[f]: v
                     for f, v in obj_dict.items()
                     if f in valid_dict_key_to_field_name}
-        return cls(**obj_dict)
+        obj = cls(**obj_dict)
+        if obj_dict.get("id"):
+            obj._state.adding = False
+        return obj
 
     @classmethod
     def make_dummy_obj_from_query_params(cls, param_dict: dict) -> object:
