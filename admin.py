@@ -7,10 +7,12 @@ This codebase is confidential and proprietary.
 No license for use, viewing, or reproduction without explicit written permission.
 """
 
+from collections import OrderedDict
+from itertools import chain
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django import forms
-from django.contrib.auth.models import Group
 from django.http import Http404
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
@@ -119,12 +121,19 @@ class PermRootAdminMixin(object):
         else:
             form = PermRootForm(self.model)
 
-        role_to_users = {perm_root_group.role: [
+        unordered_role_to_users = {perm_root_group.role: [
             str(u) for u in perm_root_group.group.user_set.values_list(User.USERNAME_FIELD, flat=True)
         ] for perm_root_group in obj.get_group_joins().all()}
 
+        base_roles = ("own", "adm", "con", "view", "mem")
+        role_to_users = OrderedDict()
+        for role in base_roles:
+            role_to_users[role] = unordered_role_to_users[role]
+        for role in unordered_role_to_users.keys():
+            if role not in base_roles:
+                role_to_users[role] = unordered_role_to_users[role]
+
         users = list(set(chain(*role_to_users.values())))
-        roles = list(role_to_users.keys())
 
         context = {
             "title": f"Add users to permissible groups of {obj}",

@@ -97,7 +97,7 @@ class PermRoot(PermissibleMixin, models.Model, metaclass=PermRootModelMetaclass)
 
     def __get_group_ids_for_role(self, roles=None):
         root_group_model_class = self.get_group_join_rel().related_model
-        roles = roles if roles is not None or [role for role, _ in root_group_model_class._meta.get_field("role").choices]
+        roles = roles if roles is not None else [role for role, _ in root_group_model_class._meta.get_field("role").choices]
         return root_group_model_class.objects.filter(
             role__in=roles,
             **{self._meta.model_name: self}
