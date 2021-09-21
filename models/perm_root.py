@@ -95,14 +95,21 @@ class PermRoot(PermissibleMixin, models.Model, metaclass=PermRootModelMetaclass)
                 **{self._meta.model_name: self}
             )
 
-    def add_user_to_groups(self, user, roles=None):
+    def __get_group_ids_for_role(self, roles=None):
         root_group_model_class = self.get_group_join_rel().related_model
-        roles = roles or [role for role, _ in root_group_model_class._meta.get_field("role").choices]
-        group_ids = root_group_model_class.objects.filter(
+        roles = roles if roles is not None or [role for role, _ in root_group_model_class._meta.get_field("role").choices]
+        return root_group_model_class.objects.filter(
             role__in=roles,
             **{self._meta.model_name: self}
         ).values_list("group_id", flat=True)
+
+    def add_user_to_groups(self, user, roles=None):
+        group_ids = self.__get_group_ids_for_role(roles=roles)
         user.groups.add(*group_ids)
+
+    def remove_user_from_groups(self, user, roles=None):
+        group_ids = self.__get_group_ids_for_role(roles=roles)
+        user.groups.remove(*group_ids)
 
     @classmethod
     def get_group_join_rel(cls) -> models.ManyToOneRel:
