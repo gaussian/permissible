@@ -8,6 +8,7 @@ No license for use, viewing, or reproduction without explicit written permission
 """
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django import forms
 from django.contrib.auth.models import Group
 from django.http import Http404
@@ -101,24 +102,20 @@ class PermRootAdminMixin(object):
     def permissible_view(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
 
-        # TODO: need to have "change_permission" permission, not just "change"
         if not self.has_change_permission(request=request, obj=obj):
             raise Http404("Lacking permission")
 
-        # TODO: once the above permission is fixed, remove the superuser requirement
-        if request.method == "POST" and request.user.is_superuser:
+        if request.method == "POST":
             form = PermRootForm(self.model, request.POST)
             if form.is_valid():
-                roles = form.cleaned_data["roles"]
-                group_ids = obj.get_group_joins().filter(
-                    role__in=roles
-                ).values_list("group_id", flat=True)
-                groups = Group.objects.filter(id__in=group_ids)
+                roles = form.cleaned_data["roles"] or []
+                if not request.user.is_superuser and any(r in roles for r in ("adm", "own")):
+                    raise ValidationError(f"Bad roles, must be superuser: {roles}")
                 user = form.cleaned_data["user"]
                 if form.cleaned_data["add"]:
-                    user.groups.add(*list(groups))
+                    obj.add_user_to_groups(user=user, roles=roles)
                 else:
-                    user.groups.remove(*list(groups))
+                    obj.remove_user_from_groups(user=user, roles=roles)
         else:
             form = PermRootForm(self.model)
 
@@ -126,10 +123,14 @@ class PermRootAdminMixin(object):
             str(u) for u in perm_root_group.group.user_set.values_list(User.USERNAME_FIELD, flat=True)
         ] for perm_root_group in obj.get_group_joins().all()}
 
+        users = list(set(chain(*role_to_users.values())))
+        roles = list(role_to_users.keys())
+
         context = {
             "title": f"Add users to permissible groups of {obj}",
             "form": form,
             "role_to_users": role_to_users,
+            "users": users,
             "opts": self.model._meta,
             # Include common variables for rendering the admin template.
             **self.admin_site.each_context(request),
