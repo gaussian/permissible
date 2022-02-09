@@ -128,10 +128,10 @@ class PermRootAdminMixin(object):
         base_roles = ("own", "adm", "con", "view", "mem")
         role_to_users = OrderedDict()
         for role in base_roles:
-            role_to_users[role] = unordered_role_to_users[role]
+            role_to_users[role] = unordered_role_to_users.get(role, [])
         for role in unordered_role_to_users.keys():
             if role not in base_roles:
-                role_to_users[role] = unordered_role_to_users[role]
+                role_to_users[role] = unordered_role_to_users.get(role, [])
 
         users = list(set(chain(*role_to_users.values())))
 
