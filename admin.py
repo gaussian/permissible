@@ -10,6 +10,8 @@ No license for use, viewing, or reproduction without explicit written permission
 from collections import OrderedDict
 from itertools import chain
 
+from django.contrib import admin
+from django.contrib.admin.widgets import AutocompleteSelect
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django import forms
@@ -17,7 +19,6 @@ from django.http import Http404
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 
-from neutron.admin.forms import get_autocomplete_widget_for_model
 from neutron.admin.utils import get_url_as_link
 from neutron.permissible.models import PermissibleMixin
 
@@ -86,9 +87,12 @@ class PermRootForm(forms.Form):
         role_choices = ((role_value, role_label)
                         for role_value, (role_label, _) in perm_root_group_class.ROLE_DEFINITIONS.items())
 
+        # Get related field, to make an autocomplete widget
+        users_field = perm_root_class._meta.get_field("users")
+
         self.fields.update(dict(
             user=forms.ModelChoiceField(queryset=User.objects.all(),
-                                        widget=get_autocomplete_widget_for_model(User)),
+                                        widget=AutocompleteSelect(users_field, admin.site)),
             roles=forms.MultipleChoiceField(choices=role_choices)
         ))
 
