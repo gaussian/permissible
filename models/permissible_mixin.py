@@ -12,8 +12,7 @@ from itertools import chain
 from typing import Dict, List, Union, Optional
 
 from django.contrib.auth.models import PermissionsMixin
-from django.db.models.fields.related import RelatedField, ManyToManyField
-from django.db.models.fields.reverse_related import ForeignObjectRel
+from django.db import models
 
 from ..perm_def import ShortPermsMixin, PermDef, DENY_ALL, IS_AUTHENTICATED, ALLOW_ALL
 
@@ -167,7 +166,7 @@ class PermissibleMixin(ShortPermsMixin):
 
     @classmethod
     def make_objs_from_data(cls, obj_dict_or_list: Union[Dict, List[Dict]]
-                            ) -> Union[object, List[object]]:
+                            ) -> Union[models.Model, List[models.Model]]:
         """
         Turn data (usually request.data) into a model object (or a list of model
         objects). Allows multiple objects to be built.
@@ -185,9 +184,9 @@ class PermissibleMixin(ShortPermsMixin):
         return [cls._make_obj_from_data(obj_dict=obj_dict_or_list)]
 
     @classmethod
-    def _make_obj_from_data(cls, obj_dict: Dict) -> object:
+    def _make_obj_from_data(cls, obj_dict: Dict) -> models.Model:
         valid_fields = [f for f in cls._meta.get_fields()
-                        if not isinstance(f, (ForeignObjectRel, ManyToManyField))]
+                        if not isinstance(f, (models.ForeignObjectRel, models.ManyToManyField))]
         valid_dict_key_to_field_name = {f.name: f.attname for f in valid_fields}
         valid_dict_key_to_field_name.update({f.attname: f.attname for f in valid_fields})
         obj_dict = {valid_dict_key_to_field_name[f]: v
@@ -212,6 +211,19 @@ class PermissibleMixin(ShortPermsMixin):
         obj = cls()
         [setattr(obj, k, v) for k, v in param_dict.items()]
         return obj
+
+    @classmethod
+    def get_root_perm_object(cls, data):
+        try:
+            from .perm_root import PermRoot
+            data_as_obj = cls.make_objs_from_data(data)[0]
+            root_obj = data_as_obj.get_permissions_root_obj()
+            if isinstance(root_obj, PermRoot):
+                return root_obj
+        except (IndexError, AttributeError):
+            pass
+
+        return None
 
     @staticmethod
     def merge_action_perm_maps(*perm_maps):
