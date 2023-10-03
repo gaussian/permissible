@@ -11,6 +11,8 @@ from abc import abstractmethod, ABCMeta
 
 from django.contrib.auth.models import Group
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import Signal, receiver
 
 from .permissible_mixin import PermissibleMixin
 from ..perm_def import PermDef
@@ -235,6 +237,19 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
 
     class Meta:
         abstract = True
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        # Connect post_delete signal to our custom signal for every subclass
+        @receiver(post_delete, sender=cls)
+        def post_delete_handler(sender, instance, **kwargs):
+            """
+            Upon deleting a PermRootGroup subclass, delete the connected Group
+            (we do it this way to be able to attach to all subclasses).
+            """
+            instance.group.delete()
+            print(f"Deleted Group {instance.group} for {instance.__class__}: {instance}")
 
     def __str__(self):
         root_field = self.get_root_field()

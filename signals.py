@@ -15,19 +15,12 @@ from django.dispatch import receiver
 from neutron.permissible.models import PermRootGroup
 
 
-# TODO: can we make this generic, for all PermRootGroup models?
-@receiver(post_delete, sender="accounts.TeamGroup", dispatch_uid="post_delete_team_group")
-def post_delete_team_group(sender, instance, **kwargs):
-    instance.group.delete()
-
-
 @receiver(m2m_changed, sender=Group.user_set.through, dispatch_uid='neutron_post_group_membership_changed')
 def post_group_membership_changed(sender, action, instance, model, pk_set, **kwargs):
     """
     After a User is added or removed from a Group:
     - create a PermRootUser record (e.g. TeamUser)  if needed
     """
-
     user = instance
     if model != Group:
         return
