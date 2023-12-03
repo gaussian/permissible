@@ -19,7 +19,7 @@ from neutron.permissible.models import PermRootGroup
 def post_group_membership_changed(sender, action, instance, model, pk_set, **kwargs):
     """
     After a User is added or removed from a Group:
-    - create a PermRootUser record (e.g. TeamUser)  if needed
+    - create or remove a PermRootUser record (e.g. TeamUser) if needed
     """
     user = instance
     if model != Group:
