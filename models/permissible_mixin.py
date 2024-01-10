@@ -336,7 +336,7 @@ class PermissibleRootOnlyMixin(PermissibleAuthenticatedListingMixin, Permissible
 
 class PermissibleBasicRootOnlyMixin(PermissibleAuthenticatedListingMixin, PermissibleMixin):
     """
-    A alternative configuration of permissions that ONLY checks for object-level
+    An alternative configuration of permissions that ONLY checks for object-level
     permissions on the ROOT of the object that we are trying to access.
 
     Note that having "change" permission on the root object confers "create"
