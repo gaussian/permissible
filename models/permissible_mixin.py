@@ -165,8 +165,10 @@ class PermissibleMixin(ShortPermsMixin):
         return parent_model_class(pk=parent_pk)
 
     @classmethod
-    def make_objs_from_data(cls, obj_dict_or_list: Union[Dict, List[Dict]]
-                            ) -> Union[models.Model, List[models.Model]]:
+    def make_objs_from_data(
+            cls,
+            obj_dict_or_list: Union[Dict, List[Dict]]
+    ) -> Union[models.Model, List[models.Model]]:
         """
         Turn data (usually request.data) into a model object (or a list of model
         objects). Allows multiple objects to be built.
@@ -214,12 +216,18 @@ class PermissibleMixin(ShortPermsMixin):
 
     @classmethod
     def get_root_perm_object(cls, data):
+        """
+        Look at the data provided to find the "permissions root" object,
+        and return it if it exists.
+
+        Note that sometimes, get_permissions_root_obj() returns a User,
+        which is NOT a PermRoot object.
+        """
         try:
             from .perm_root import PermRoot
             data_as_obj = cls.make_objs_from_data(data)[0]
             root_obj = data_as_obj.get_permissions_root_obj()
-            if isinstance(root_obj, PermRoot):
-                return root_obj
+            return root_obj
         except (IndexError, AttributeError):
             pass
 
