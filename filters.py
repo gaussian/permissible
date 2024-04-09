@@ -49,10 +49,15 @@ class PermissibleRootFilter(filters.BaseFilterBackend):
             related_obj = None
             if not isinstance(perm_filterset_fields, (tuple, list)):
                 perm_filterset_fields = (perm_filterset_fields,)
+            field_for_filter, pk_for_filter = None, None
             for i, perm_filterset_field in enumerate(perm_filterset_fields):
                 related_model = model_class._meta.get_field(perm_filterset_field).related_model
+                # First item - get the ID value from the query params object
                 if i == 0:
                     related_pk = request.query_params.get(perm_filterset_field)
+                    field_for_filter = perm_filterset_field
+                    pk_for_filter = related_pk
+                # Not the first item, i.e. this is nested - get ID value by traversing the nesting
                 else:
                     related_obj.refresh_from_db()
                     related_pk = getattr(related_obj, perm_filterset_field)
@@ -67,8 +72,9 @@ class PermissibleRootFilter(filters.BaseFilterBackend):
                     message += f" - {perm}"
                 raise PermissionDenied(message)
 
-            # Filter
-            queryset = queryset.filter(**{perm_filterset_field: related_pk})
+            # Filter, but only by the first perm_filterset_field (`field_for_filter`,
+            # the one that is not nested) as we followed the chain of ownership
+            queryset = queryset.filter(**{field_for_filter: pk_for_filter})
 
         return queryset
 

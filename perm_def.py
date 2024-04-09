@@ -22,9 +22,12 @@ class PermDef:
         PermDef(["view", "change"], condition_checker=lambda o, u: not o.is_public and u.is_superuser)
     """
 
-    def __init__(self, short_perm_codes: Optional[List[str]],
-                 obj_getter: Optional[Union[Callable[[object, object], ShortPermsMixin], str]] = None,
-                 condition_checker: Optional[Union[Callable[[object, object, object], bool], str]] = None):
+    def __init__(
+            self,
+            short_perm_codes: Optional[List[str]],
+            obj_getter: Optional[Union[Callable[[object, object], ShortPermsMixin], str]] = None,
+            condition_checker: Optional[Union[Callable[[object, object, object], bool], str]] = None
+    ):
         """
         Initialize.
         :param short_perm_codes: A list of short permission codes, e.g. ["view", "change"]
