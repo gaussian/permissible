@@ -60,7 +60,7 @@ class PermDef:
         """
         # Try to get the necessary object (if object-level permissions, fail if no obj found)
         obj = self.get_obj(obj=obj, context=context)
-        if is_obj and not obj:
+        if is_obj and (not obj or not obj.pk):
             return False
 
         # Check the "condition checker"
