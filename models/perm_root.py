@@ -7,32 +7,21 @@ This codebase is confidential and proprietary.
 No license for use, viewing, or reproduction without explicit written permission.
 """
 
-from abc import abstractmethod, ABCMeta
+from abc import abstractmethod
 
 from django.contrib.auth.models import Group
 from django.db import models
 from django.db.models.signals import post_delete
-from django.dispatch import Signal, receiver
+from django.dispatch import receiver
 
-from .permissible_mixin import PermissibleMixin
-from ..perm_def import PermDef
-from neutron.db.metaclasses import ExtraPermModelMetaclass
 from neutron.utils.signals import get_subclasses
 
-
-class AbstractModelMetaclass(ABCMeta, models.base.ModelBase):
-    pass
-
-
-class PermRootModelMetaclass(ExtraPermModelMetaclass, AbstractModelMetaclass):
-    permission_definitions = (
-        ("add_on_{}", "Can add related records onto {}"),
-        ("change_on_{}", "Can change related records on {}"),
-        ("change_permission_{}", "Can change permissions of {}"),
-    )
+from .base import AbstractModelMetaclass, BasePermRoot
+from .permissible_mixin import PermissibleMixin
+from ..perm_def import PermDef
 
 
-class PermRoot(PermissibleMixin, models.Model, metaclass=PermRootModelMetaclass):
+class PermRoot(BasePermRoot):
     """
     A model that has a corresponding `PermRootGroup` to associate it with a
     `Group` model, thereby extending the fields and functionality of the default
