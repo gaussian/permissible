@@ -62,9 +62,6 @@ db.sqlite3
 instance/
 .webassets-cache
 
-# Scrapy stuff:
-.scrapy
-
 # Sphinx documentation
 docs/**
 !docs/**/source
@@ -80,9 +77,6 @@ target/
 
 # pyenv
 .python-version
-
-# celery beat schedule file
-celerybeat-schedule
 
 # SageMath parsed files
 *.sage.py
