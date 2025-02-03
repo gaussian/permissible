@@ -1,0 +1,36 @@
+"""
+Neutron (a Visor module)
+Author: Kut Akdogan
+(c) 2016- Gaussian Holdings, LLC.
+
+This codebase is confidential and proprietary.
+No license for use, viewing, or reproduction without explicit written permission.
+"""
+
+from abc import ABCMeta
+from typing import Iterable, Tuple
+
+from django.db import models
+
+
+class AbstractModelMetaclass(ABCMeta, models.base.ModelBase):
+    pass
+
+
+class ExtraPermModelMetaclass(models.base.ModelBase):
+    """
+    Metaclass to allow model to automatically create extra permissions.
+    """
+    permission_definitions = ()     # type: Iterable[Tuple[str, str]]
+
+    def __new__(mcs, name, bases, attrs):
+        new_class = super().__new__(mcs, name, bases, attrs)
+
+        new_class._meta.permissions = new_class._meta.permissions or tuple()
+        new_class._meta.permissions += tuple(
+            (codename.format(new_class._meta.model_name), description.format(new_class._meta.verbose_name))
+            for codename, description in mcs.permission_definitions
+        )
+        new_class._meta.original_attrs["permissions"] = new_class._meta.permissions
+
+        return new_class

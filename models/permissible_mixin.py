@@ -7,9 +7,14 @@ This codebase is confidential and proprietary.
 No license for use, viewing, or reproduction without explicit written permission.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
 from itertools import chain
-from typing import Dict, List, Union, Optional
+from typing import TYPE_CHECKING, Dict, List, Union, Optional
+
+if TYPE_CHECKING:
+    from .base import BasePermRoot
 
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
@@ -128,7 +133,7 @@ class PermissibleMixin(ShortPermsMixin):
 
         return False
 
-    def get_permissions_root_obj(self, context=None) -> object:
+    def get_permissions_root_obj(self, context=None) -> BasePermRoot:
         """
         Convenience function to retrieve a root object against which permissions
         can be checked.
