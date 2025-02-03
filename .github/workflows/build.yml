@@ -13,7 +13,9 @@ permissions:
 jobs:
   build-new-version:
     if: github.event.pull_request.merged == true
+    
     runs-on: ubuntu-latest
+    
     steps:
         
       - uses: actions/create-github-app-token@v1
@@ -164,13 +166,18 @@ jobs:
   publish-to-pypi:
     name: >-
       Publish Python 🐍 distribution 📦 to PyPI
+    
     if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
+    
     needs:
       - build-new-version
+    
     runs-on: ubuntu-latest
+    
     environment:
       name: pypi
       url: https://pypi.org/p/permissible
+    
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
     
