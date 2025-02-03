@@ -1,0 +1,197 @@
+name: Release New Version
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  build-new-version:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+        
+      - uses: actions/create-github-app-token@v1
+        id: deployer_app_token
+        with:
+          app-id: ${{ vars.DEPLOYER_APP_ID }}
+          private-key: ${{ secrets.DEPLOYER_SSH_KEY }}
+
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0 # otherwise, there would be errors pushing refs to the destination repository.
+          token: ${{ steps.deployer_app_token.outputs.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          # cache: 'pip'
+
+#      - name: Install dependencies
+#        run: |
+#          python -m pip install --upgrade pip
+#          pip install setuptools wheel twine
+
+      - name: Determine version bump type from PR labels
+        id: set_version_type
+        run: |
+          allLabels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+          if echo $allLabels | grep -q "release:major"; then
+            echo "versionType=major" >> $GITHUB_OUTPUT
+          elif echo $allLabels | grep -q "release:minor"; then
+            echo "versionType=minor" >> $GITHUB_OUTPUT
+          else
+            echo "versionType=patch" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Increment version
+        id: versioning
+        shell: python
+        env:
+          VERSION_TYPE: ${{ steps.set_version_type.outputs.versionType }}
+        run: |
+          import re
+          import os
+
+          version_type = os.environ['VERSION_TYPE']
+
+          # Mapping of files to their version regex patterns.
+          # For setup.py and pyproject.toml the version line is e.g.:
+          #    version = "1.2.3" or version = "1.2.3"
+          # For permissible/__init__.py it is:
+          #    __version__ = "1.2.3"
+          files_to_update = {
+              'setup.py': r'(version\s*=\s*")(\d+\.\d+\.\d+)(")',
+              'pyproject.toml': r'(version\s*=\s*")(\d+\.\d+\.\d+)(")',
+              'permissible/__init__.py': r'(__version__\s*=\s*")(\d+\.\d+\.\d+)(")',
+          }
+
+          new_version = None
+
+          for file_path, pattern in files_to_update.items():
+              if os.path.exists(file_path):
+                  with open(file_path, 'r') as file:
+                      content = file.read()
+                  match = re.search(pattern, content)
+                  if match:
+                      if new_version is None:
+                          # Use the version from the first matching file.
+                          major, minor, patch = map(int, match.group(2).split('.'))
+                          if version_type == 'major':
+                              major += 1
+                              minor = 0
+                              patch = 0
+                          elif version_type == 'minor':
+                              minor += 1
+                              patch = 0
+                          else:
+                              patch += 1
+                          new_version = f'{major}.{minor}.{patch}'
+                      # Replace the old version with the new version.
+                      new_content = re.sub(pattern, lambda m: f'{m.group(1)}{new_version}{m.group(3)}', content)
+                      with open(file_path, 'w') as file:
+                          file.write(new_content)
+                      print(f"Updated {file_path} to version {new_version}")
+                  else:
+                      print(f"No version pattern found in {file_path}")
+              else:
+                  print(f"File {file_path} does not exist.")
+
+          if new_version is None:
+              raise Exception("No version string found in any file.")
+
+          # Expose the new version to later steps.
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+              print(f'newVersion={new_version}', file=fh)
+
+      - name: Commit and push version increment and tag
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          # Add all files that might have been updated.
+          git add setup.py pyproject.toml permissible/__init__.py 2>/dev/null || true
+          git commit -m "Increment version number to ${{ steps.versioning.outputs.newVersion }}"
+          git push
+          git tag v${{ steps.versioning.outputs.newVersion }}
+          git push origin v${{ steps.versioning.outputs.newVersion }}
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.versioning.outputs.newVersion }}
+          release_name: v${{ steps.versioning.outputs.newVersion }}
+          draft: false
+          prerelease: false
+
+      - name: Checkout the merged development branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }} # This is the branch that was merged into main
+          fetch-depth: 0 # Fetch all history for all branches and tags
+
+      - name: Merge main into development branch or apply version change
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git fetch origin main:main
+          # Merge main into the current branch, preferring main’s changes if conflicts occur.
+          git merge origin/main --no-edit -X ours
+          # If conflicts arise and are resolved, or if no conflicts occur, proceed to push
+          git push origin HEAD:${{ github.head_ref }}
+
+      - name: Build release distributions
+        run: |
+          python -m pip install build
+          python -m build
+
+      - name: Store the distribution packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish-to-pypi:
+    name: >-
+      Publish Python 🐍 distribution 📦 to PyPI
+    if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
+    needs:
+      - build-new-version
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/permissible
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+    
+    steps:
+      - name: Download all the dists
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      
+      - name: Publish distribution 📦 to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+      
+      - name: Send Slack Notification
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' --data '{"channel": "#sys-status", "text":"New version of `permissible` released: ${{ steps.versioning.outputs.newVersion }}"}' $SLACK_WEBHOOK_URL
+
+#      - name: Publish package to GitHub Packages
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#        run: |
+#          twine upload --repository-url https://maven.pkg.github.com/gaussian/neutron -u __token__ -p ${{ secrets.GITHUB_TOKEN }} dist/*
