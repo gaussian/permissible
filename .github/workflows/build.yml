@@ -17,19 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-        
-      - uses: actions/create-github-app-token@v1
-        id: deployer_app_token
-        with:
-          app-id: ${{ vars.DEPLOYER_APP_ID }}
-          private-key: ${{ secrets.DEPLOYER_SSH_KEY }}
 
       - name: Check out code
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0 # otherwise, there would be errors pushing refs to the destination repository.
-          token: ${{ steps.deployer_app_token.outputs.token }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -190,15 +183,3 @@ jobs:
       
       - name: Publish distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-      
-      - name: Send Slack Notification
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          curl -X POST -H 'Content-type: application/json' --data '{"channel": "#sys-status", "text":"New version of `permissible` released: ${{ steps.versioning.outputs.newVersion }}"}' $SLACK_WEBHOOK_URL
-
-#      - name: Publish package to GitHub Packages
-#        env:
-#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#        run: |
-#          twine upload --repository-url https://maven.pkg.github.com/gaussian/neutron -u __token__ -p ${{ secrets.GITHUB_TOKEN }} dist/*
