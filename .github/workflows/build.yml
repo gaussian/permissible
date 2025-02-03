@@ -59,12 +59,11 @@ jobs:
           version_type = os.environ['VERSION_TYPE']
 
           # Mapping of files to their version regex patterns.
-          # For setup.py and pyproject.toml the version line is e.g.:
+          # For pyproject.toml the version line is e.g.:
           #    version = "1.2.3" or version = "1.2.3"
           # For permissible/__init__.py it is:
           #    __version__ = "1.2.3"
           files_to_update = {
-              'setup.py': r'(version\s*=\s*")(\d+\.\d+\.\d+)(")',
               'pyproject.toml': r'(version\s*=\s*")(\d+\.\d+\.\d+)(")',
               'permissible/__init__.py': r'(__version__\s*=\s*")(\d+\.\d+\.\d+)(")',
           }
@@ -112,7 +111,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           # Add all files that might have been updated.
-          git add setup.py pyproject.toml permissible/__init__.py 2>/dev/null || true
+          git add pyproject.toml permissible/__init__.py
           git commit -m "Increment version number to ${{ steps.versioning.outputs.newVersion }}"
           git push
           git tag v${{ steps.versioning.outputs.newVersion }}
