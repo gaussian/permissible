@@ -14,11 +14,10 @@ from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
-from neutron.utils.signals import get_subclasses
-
 from .base import AbstractModelMetaclass, BasePermRoot
 from .permissible_mixin import PermissibleMixin
 from ..perm_def import PermDef
+from ..utils.signals import get_subclasses
 
 
 class PermRoot(BasePermRoot):

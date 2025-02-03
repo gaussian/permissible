@@ -1,14 +1,7 @@
-from abc import ABCMeta
-
 from django.db import models
 
-from neutron.db.metaclasses import ExtraPermModelMetaclass
-
 from .permissible_mixin import PermissibleMixin
-
-
-class AbstractModelMetaclass(ABCMeta, models.base.ModelBase):
-    pass
+from .metaclasses import AbstractModelMetaclass, ExtraPermModelMetaclass
 
 
 class PermRootModelMetaclass(ExtraPermModelMetaclass, AbstractModelMetaclass):

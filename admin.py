@@ -18,9 +18,9 @@ from django import forms
 from django.http import Http404
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
+from django.utils.html import format_html
 
-from neutron.admin.utils import get_url_as_link
-from neutron.permissible.models import PermissibleMixin
+from .models import PermissibleMixin
 
 User = get_user_model()
 
@@ -158,5 +158,7 @@ class PermRootAdminMixin(object):
         return "%s_%s_permissible_change" % (self.model._meta.app_label, self.model._meta.model_name)
 
     def permissible_groups_link(self, obj):
-        url_for_link = reverse("admin:" + self.get_permissible_change_url_name(), args=(obj.pk,))
-        return get_url_as_link(url_for_link, "Edit permissible groups", check_for_http=False, new_window=False)
+        url = reverse("admin:" + self.get_permissible_change_url_name(), args=(obj.pk,))
+        link_text = "Edit permissible groups"
+        html_format_string = "<a href=' {url}'>{link_text}</a>"     # SPACE IS NEEDED!
+        return format_html(html_format_string, url=url, text=link_text)
