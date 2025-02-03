@@ -72,10 +72,13 @@ Of course, it's easy to link a "project" to a "project file" through a foreign k
 But `permissible` solves the problem of tying this to the Django `Group` model,
 which is what we use for permissions.
 
-To accomplish this, `permissible` provides two base model classes that you should use:
+To accomplish this, `permissible` provides 3 base model classes that you should use:
 1. **`PermRoot`**: Make the root model (e.g. `Team`) derive from `PermRoot`
 2. **`PermRootGroup`**: Create a new model that derives from `PermRootGroup`
 and has a `ForeignKey` to the root model
+3. **`PermRootUser`**: Create a new model that derives from `PermRootUser`
+and has a `ForeignKey` to the root model (this model automatically adds and
+removes records when a user is a member of the appropriate `PermRootGroup`)
 
 You can then simply adjust your permissions maps in `PermissibleMixin` to
 incorporate checking of the root model for permissions. See the documentation for
@@ -165,6 +168,9 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
 
 ### Create a user
 - A new user is created (via Django admin), and added to the relevant groups (e.g. members, admins)
+- A `TeamUser` record is added automatically when this user joins those groups.
+  Note that if the user is removed from ALL of those groups for this `Team`, they will
+  automatically have their `TeamUser` record removed.
 
 ### Edit a team-related record
 - The user tries to edit a `TeamInfo` record, either via API (django-rest-framework) or Django
