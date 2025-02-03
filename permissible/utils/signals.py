@@ -1,12 +1,7 @@
 """
-Neutron (a Visor module)
-Author: Kut Akdogan
-(c) 2016- Gaussian Holdings, LLC.
-
-This codebase is confidential and proprietary.
-No license for use, viewing, or reproduction without explicit written permission.
+`permissible` (a `neutron` module by Gaussian)
+Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
-
 
 def get_subclasses(classes, level=0):
     """

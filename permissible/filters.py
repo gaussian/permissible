@@ -1,3 +1,8 @@
+"""
+`permissible` (a `neutron` module by Gaussian)
+Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
+"""
+
 from django.conf import settings
 from rest_framework import filters
 from rest_framework.exceptions import PermissionDenied
@@ -77,4 +82,3 @@ class PermissibleRootFilter(filters.BaseFilterBackend):
             queryset = queryset.filter(**{field_for_filter: pk_for_filter})
 
         return queryset
-

@@ -1,3 +1,8 @@
+"""
+`permissible` (a `neutron` module by Gaussian)
+Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
+"""
+
 from django.conf import settings
 from django.db import models
 

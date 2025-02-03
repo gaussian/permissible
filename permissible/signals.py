@@ -1,10 +1,6 @@
 """
-Neutron (a Visor module)
-Author: Kut Akdogan
-(c) 2016- Gaussian Holdings, LLC.
-
-This codebase is confidential and proprietary.
-No license for use, viewing, or reproduction without explicit written permission.
+`permissible` (a `neutron` module by Gaussian)
+Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
 from django.contrib.auth.models import Group
@@ -12,7 +8,7 @@ from django.db import models
 from django.db.models.signals import m2m_changed, post_delete
 from django.dispatch import receiver
 
-from neutron.permissible.models import PermRootGroup
+from .models import PermRootGroup
 
 
 @receiver(m2m_changed, sender=Group.user_set.through, dispatch_uid='neutron_post_group_membership_changed')
