@@ -19,9 +19,10 @@ any other place you use PermissibleMixin).
 
 # Installation
 
-1. Install the package (note that this currently installs/requires `Django`, `djangorestframework`, `django-guardian` and related):
+1. Install the package (use of `django-guardian` is optional but needed for most Features below):
    ```sh
-   pip install permissible
+   pip install permissible               # Django, djangorestframework
+   pip install permissible[guardian]     # Same + django-guardian, djangorestframework-guardian
    ```
 
 2. If using `django-guardian`, make sure to add the `ObjectPermissionsBackend` to your `AUTHENTICATION_BACKENDS` (otherwise enable object permissions in your own desired way):
@@ -193,4 +194,3 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
         correct groups
     - View/viewset does not check object permission (this is out of our control, and makes sense
     as there is no object)
-- Upon create
