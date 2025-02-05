@@ -5,6 +5,7 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 
 from abc import abstractmethod
 
+from django.conf import settings
 from django.contrib.auth.models import Group
 from django.db import models
 from django.db.models.signals import post_delete
@@ -334,8 +335,11 @@ class PermRootUser(PermRootFieldModelMixin, PermissibleMixin, models.Model, meta
 
     IMPORTANT: the inheriting class must define:
     - a `ForeignKey to the `PermRoot` model
-    - `user`, a `ForeignKey` to the user model
+    - a joint unique condition on the `PermRoot` and `User` fields (the user field
+        has `db_index=False` so the index must be part of the UNIQUE instead)
     """
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, db_index=False, on_delete=models.CASCADE)
 
     class Meta:
         abstract = True
@@ -350,14 +354,6 @@ class PermRootUser(PermRootFieldModelMixin, PermissibleMixin, models.Model, meta
         "partial_update": perm_defs,
         "destroy": [perm_def_admin],
     }
-
-    @property
-    @abstractmethod
-    def user(self):
-        """
-        e.g. `user = models.ForeignKey("User", related_name="team_users", on_delete=models.CASCADE)`
-        """
-        pass
 
     def __str__(self):
         root_field = self.get_root_field()
