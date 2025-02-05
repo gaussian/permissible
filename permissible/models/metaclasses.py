@@ -22,6 +22,10 @@ class ExtraPermModelMetaclass(models.base.ModelBase):
     def __new__(mcs, name, bases, attrs):
         new_class = super().__new__(mcs, name, bases, attrs)
 
+        # Skip permission addition for abstract classes.
+        if new_class._meta.abstract:
+            return new_class
+
         new_class._meta.permissions = new_class._meta.permissions or tuple()
         new_class._meta.permissions += tuple(
             (codename.format(new_class._meta.model_name), description.format(new_class._meta.verbose_name))
