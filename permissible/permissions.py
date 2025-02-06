@@ -5,7 +5,6 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 
 from django.http import Http404
 from rest_framework import permissions
-from rest_framework.permissions import SAFE_METHODS
 
 
 class PermissiblePerms(permissions.DjangoObjectPermissions):
@@ -30,18 +29,19 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
     def has_permission(self, request, view):
         # Workaround to ensure DjangoModelPermissions are not applied
         # to the root view when using DefaultRouter.
-        if getattr(view, '_ignore_model_permissions', False):
+        if getattr(view, "_ignore_model_permissions", False):
             return True
 
         if not request.user or (
-           not request.user.is_authenticated and self.authenticated_users_only):
+            not request.user.is_authenticated and self.authenticated_users_only
+        ):
             return False
 
         model_class = self._queryset(view).model
         perm_check_kwargs = {
             "user": request.user,
             "action": view.action,
-            "context": {"request": request}
+            "context": {"request": request},
         }
         if not model_class.has_global_permission(**perm_check_kwargs):
             return False
@@ -53,18 +53,17 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
             return self.has_object_permission(
                 request=request,
                 view=view,
-                obj=model_class.make_dummy_obj_from_query_params(request.query_params)
+                obj=model_class.make_dummy_obj_from_query_params(request.query_params),
             )
         elif not view.detail:
             # For other actions that have no instance (i.e. detail=False, e.g. "create"),
             # we must create a dummy object from request data and pass it into
             # `has_object_permission`, as this function will normally not be called
             # NOTE: multiple objects are allowed, hence the list of objects checked
-            return all(self.has_object_permission(
-                request=request,
-                view=view,
-                obj=o
-            ) for o in model_class.make_objs_from_data(request.data))
+            return all(
+                self.has_object_permission(request=request, view=view, obj=o)
+                for o in model_class.make_objs_from_data(request.data)
+            )
         return True
 
     def has_object_permission(self, request, view, obj):
@@ -74,7 +73,9 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
         user = request.user
         context = {"request": request}
 
-        if not obj.has_object_permission(user=user, action=view.action, context=context):
+        if not obj.has_object_permission(
+            user=user, action=view.action, context=context
+        ):
             # If user is not authenticated (if self.authenticated_users_only = False),
             # then return False to raise a 403 (instead of 404 per the logic below)
             if not user.is_authenticated:
@@ -94,7 +95,9 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
                 # to make another lookup.
                 raise Http404
 
-            if not obj.has_object_permission(user=user, action="retrieve", context=context):
+            if not obj.has_object_permission(
+                user=user, action="retrieve", context=context
+            ):
                 raise Http404
 
             # Has read permissions.
@@ -120,4 +123,5 @@ class PermissiblePermsUnauthAllowed(PermissiblePerms):
 
     NOTE: much is copied from `permissions.DjangoObjectPermissions`.
     """
+
     authenticated_users_only = False
