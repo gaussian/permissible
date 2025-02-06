@@ -111,13 +111,13 @@ class PermRootForm(forms.Form):
 
 
 class PermRootAdminMixin(object):
-    @admin.action(description="Init (or confirm) groups")
-    def reset_groups(self, request, queryset):
+    @admin.action(description="Create or reset group/role permissions")
+    def reset_perm_groups(self, request, queryset):
         for root_obj in queryset:
             root_obj: PermRoot
             root_obj.reset_perm_groups()
 
-    actions = [reset_groups]
+    actions = [reset_perm_groups]
 
     def get_urls(self):
         urls = super().get_urls()
