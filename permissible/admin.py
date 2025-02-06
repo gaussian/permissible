@@ -117,7 +117,7 @@ class PermRootAdminMixin(object):
             root_obj: PermRoot
             root_obj.reset_perm_groups()
 
-    actions = [reset_perm_groups]
+    actions = (reset_perm_groups,)
 
     def get_urls(self):
         urls = super().get_urls()
