@@ -17,7 +17,7 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from .models import PermissibleMixin
+from .models import PermissibleMixin, PermRootGroup
 
 if TYPE_CHECKING:
     from .models.perm_root import PermRoot
@@ -133,6 +133,7 @@ class PermRootAdminMixin(object):
     def permissible_view(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
 
+        # Need "change permission" to access this view
         if not self.has_change_permission(request=request, obj=obj):
             raise Http404("Lacking permission")
 
@@ -140,6 +141,7 @@ class PermRootAdminMixin(object):
             form = PermRootForm(self.model, request.POST)
             if form.is_valid():
                 roles = form.cleaned_data["roles"] or []
+                # Furthermore, only superusers can add/remove users from the "adm" and "own" groups
                 if not request.user.is_superuser and any(
                     r in roles for r in ("adm", "own")
                 ):
@@ -162,7 +164,7 @@ class PermRootAdminMixin(object):
             for perm_root_group in obj.get_group_joins().all()
         }
 
-        base_roles = ("own", "adm", "con", "view", "mem")
+        base_roles = PermRootGroup.ROLE_DEFINITIONS.keys()
         role_to_users = OrderedDict()
         for role in base_roles:
             role_to_users[role] = unordered_role_to_users.get(role, [])
@@ -171,6 +173,9 @@ class PermRootAdminMixin(object):
                 role_to_users[role] = unordered_role_to_users.get(role, [])
 
         users = list(set(chain(*role_to_users.values())))
+
+        show parents
+        show resulting perm groups across all
 
         context = {
             "title": f"Add users to permissible groups of {obj}",
@@ -195,4 +200,4 @@ class PermRootAdminMixin(object):
         url = reverse("admin:" + self.get_permissible_change_url_name(), args=(obj.pk,))
         link_text = "Edit permissible groups"
         html_format_string = "<a href=' {url}'>{link_text}</a>"  # SPACE IS NEEDED!
-        return format_html(html_format_string, url=url, text=link_text)
+        return format_html(html_format_string, url=url, link_text=link_text)

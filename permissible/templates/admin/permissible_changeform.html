@@ -1,0 +1,61 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrahead %}{{ block.super }}
+{{ form.media }}
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+
+    {% if form.errors %}
+        <p class="errornote">
+        Please correct the error(s) below.
+        </p>
+        {{ form.non_field_errors }}
+    {% endif %}
+
+    <form method="post" id="{{ opts.model_name }}_form" novalidate>
+        {% csrf_token %}
+
+        <table style="margin-bottom: 30px">
+            <tr>
+                <th>Users</th>
+
+                {% for role in role_to_users.keys %}
+                <th>
+                    {{ role }}
+                </th>
+                {% endfor %}
+            </tr>
+
+            {% for user in users %}
+                <tr>
+                    <td>
+                        {{ user }}
+                    </td>
+                    {% for role, role_users in role_to_users.items %}
+                        <td>
+                        {% if user in role_users %}
+                            ✔️
+                        {% endif %}
+                        </td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </table>
+
+        <fieldset class="module aligned">
+            {% for field in form %}
+                <div class="form-row" style="padding: 10px 0;">
+                    {{ field.label_tag }}
+                    {{ field }}
+                    {{ field.errors }}
+                </div>
+            {% endfor %}
+        </fieldset>
+
+        <input type="submit" value="Submit" name="_submit">
+    </form>
+
+</div>
+{% endblock %}

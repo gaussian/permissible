@@ -6,8 +6,14 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 from django.conf import settings
 from django.db import models
 
-from ..models import PermRoot, PermRootGroup, PermRootUser, PermissibleMixin, PermissibleSelfOnlyMixin, \
-    PermissibleRootOnlyMixin
+from ..models import (
+    PermRoot,
+    PermRootGroup,
+    PermRootUser,
+    PermissibleMixin,
+    PermissibleDefaultPerms,
+    PermissibleDefaultChildPerms,
+)
 
 
 class TestPermRoot(PermRoot, models.Model):
@@ -31,7 +37,7 @@ class TestPermRootUser(PermRootUser, models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
 
 
-class TestPermissibleFromSelf(PermissibleSelfOnlyMixin, PermissibleMixin, models.Model):
+class TestPermissibleFromSelf(PermissibleDefaultPerms, PermissibleMixin, models.Model):
     class Meta:
         permissions = (
             ("add_on_testpermissiblefromself", "Can add objects on this"),
@@ -39,8 +45,10 @@ class TestPermissibleFromSelf(PermissibleSelfOnlyMixin, PermissibleMixin, models
         )
 
 
-class TestPermissibleFromRoot(PermissibleRootOnlyMixin, PermissibleMixin, models.Model):
+class TestPermissibleFromRoot(
+    PermissibleDefaultChildPerms, PermissibleMixin, models.Model
+):
     root = models.ForeignKey("TestPermRoot", on_delete=models.CASCADE)
 
-    def get_permissions_root_obj(self, context=None) -> object:
+    def get_root_perm_object(self, context=None) -> object:
         return self.root

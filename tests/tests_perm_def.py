@@ -29,9 +29,10 @@ from permissible.perm_def import PermDef
 
 # Dummy user class
 class DummyUser:
-    def __init__(self, id, perms_result=True):
+    def __init__(self, id, perms_result=True, pk=1):
         self.id = id
         self.perms_result = perms_result
+        self.pk = pk
 
     def has_perms(self, perms, obj):
         return self.perms_result
@@ -51,6 +52,10 @@ class DummyObj:
             f"{self._meta.app_label}.{sp}_{self._meta.model_name}"
             for sp in short_permissions
         ]
+
+    # Example method for string-based condition checking
+    def can_do(self, user, context):
+        return True
 
 
 # Dummy object to be returned by a getter function
@@ -76,8 +81,10 @@ class TestPermDef(unittest.TestCase):
             short_perm_codes=None, condition_checker=lambda o, u, c: True
         )
         user = DummyUser(id=1)
-        # check_global calls _check with is_obj=False and obj=None.
-        self.assertTrue(perm_def.check_global(user, context={"extra": "value"}))
+        # Updated: pass DummyObj as the obj_class.
+        self.assertTrue(
+            perm_def.check_global(DummyObj, user, context={"extra": "value"})
+        )
 
     def test_check_global_fail_condition(self):
         # PermDef with a condition_checker that always returns False.
@@ -85,8 +92,14 @@ class TestPermDef(unittest.TestCase):
             short_perm_codes=None, condition_checker=lambda o, u, c: False
         )
         user = DummyUser(id=1)
-        # Expect the check to fail (returns None)
-        self.assertIsNone(perm_def.check_global(user))
+        # Expect False when condition fails.
+        self.assertFalse(perm_def.check_global(DummyObj, user))
+
+    def test_check_global_no_condition(self):
+        # When no condition_checker is provided, check_condition defaults to True.
+        perm_def = PermDef(short_perm_codes=None)
+        user = DummyUser(id=1)
+        self.assertTrue(perm_def.check_global(DummyObj, user))
 
     def test_check_obj_success(self):
         # PermDef with a non-None short_perm_codes and condition_checker always True.
@@ -131,6 +144,13 @@ class TestPermDef(unittest.TestCase):
         dummy_with_getter = DummyWithGetterStr(root_obj=root_obj)
         user = DummyUser(id=1, perms_result=True)
         self.assertTrue(perm_def.check_obj(dummy_with_getter, user))
+
+    def test_condition_checker_string(self):
+        # Use a string as condition_checker to invoke an object's method.
+        perm_def = PermDef(short_perm_codes=["view"], condition_checker="can_do")
+        dummy_obj = DummyObj(pk=321)
+        user = DummyUser(id=1, perms_result=True)
+        self.assertTrue(perm_def.check_obj(dummy_obj, user))
 
 
 if __name__ == "__main__":

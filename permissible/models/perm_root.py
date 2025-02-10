@@ -6,7 +6,7 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Optional, Type
+from typing import Iterable, Optional, Type
 
 from django.conf import settings
 from django.contrib.auth.models import Group, AbstractBaseUser
@@ -14,10 +14,11 @@ from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
-from .base import AbstractModelMetaclass, BasePermRoot
+from .base_perm_root import AbstractModelMetaclass, BasePermRoot
 from .permissible_mixin import PermissibleMixin
-from ..perm_def import PermDef
-from ..utils.signals import get_subclasses
+from .utils import update_permissions_for_object
+from permissible.perm_def import PermDef
+from permissible.utils.signals import get_subclasses
 
 
 class PermRoot(BasePermRoot):
@@ -70,6 +71,14 @@ class PermRoot(BasePermRoot):
         if adding:
             self.reset_perm_groups()
 
+    def get_permission_targets(self) -> Iterable[PermRoot]:
+        """
+        Return an iterable (or generator) of PermRoot objects for which
+        permissions should be set based on this instance.
+        For a regular PermRoot, simply yield self.
+        """
+        yield self
+
     def reset_perm_groups(self):
         """
         Create the associated `PermRootGroup` and `Group` objects for this
@@ -80,8 +89,9 @@ class PermRoot(BasePermRoot):
             self.get_group_join_rel().related_model
         )
 
-        # Create PermRootGroup for each role in possible roles
+        # Create/update PermRootGroup for each role in possible roles
         role_choices = root_group_model_class._meta.get_field("role").choices
+        assert isinstance(role_choices, Iterable)
         for role, _ in role_choices:
             root_group_obj, created = root_group_model_class.objects.get_or_create(
                 role=role, **{self._meta.model_name: self}
@@ -96,6 +106,7 @@ class PermRoot(BasePermRoot):
         root_group_model_class = self.get_group_join_rel().related_model
 
         role_choices = root_group_model_class._meta.get_field("role").choices
+        assert isinstance(role_choices, Iterable)
         roles = roles if roles is not None else [role for role, _ in role_choices]
 
         return root_group_model_class.objects.filter(
@@ -145,10 +156,12 @@ class PermRoot(BasePermRoot):
 
     def get_user_joins(self):
         user_join_attr_name = self.get_user_join_rel().related_name
+        assert user_join_attr_name
         return getattr(self, user_join_attr_name)
 
     def get_group_joins(self):
         group_join_attr_name = self.get_group_join_rel().related_name
+        assert group_join_attr_name
         return getattr(self, group_join_attr_name)
 
     def get_member_group_id(self):
@@ -159,13 +172,13 @@ class PermRoot(BasePermRoot):
 
     # TODO: delete this, not needed as the PermRootGroup models are created on
     #      `PermRoot.save()` anyway
-    def copy_related_records(self, new_obj):
-        remote_field_name = self.get_group_join_rel().remote_field.attname
-        for group_join_obj in self.get_group_joins().all():
-            group_join_obj.pk = None
-            group_join_obj.group_id = None
-            setattr(group_join_obj, remote_field_name, new_obj.pk)
-            group_join_obj.save()
+    # def copy_related_records(self, new_obj):
+    #     remote_field_name = self.get_group_join_rel().remote_field.attname
+    #     for group_join_obj in self.get_group_joins().all():
+    #         group_join_obj.pk = None
+    #         group_join_obj.group_id = None
+    #         setattr(group_join_obj, remote_field_name, new_obj.pk)
+    #         group_join_obj.save()
 
 
 class PermRootFieldModelMixin(object):
@@ -204,7 +217,11 @@ def build_role_field(role_definitions):
     )
 
 
-class PermRootGroup(PermRootFieldModelMixin, models.Model):
+class PermRootGroup(
+    PermRootFieldModelMixin,
+    models.Model,
+    metaclass=AbstractModelMetaclass,
+):
     """
     Base abstract model that joins the Django Group model to another model
     (`PermRoot`), such as "Team" or "Project". This allows us to have
@@ -291,7 +308,6 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
         but it can also be called via the admin interface in case of
         troubleshooting.
         """
-        from guardian.shortcuts import assign_perm, remove_perm, get_group_perms
 
         # Find the root object associated with thie object (PermRoot)
         root_field = self.get_root_field()
@@ -299,24 +315,22 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
 
         # Determine the new set of permission codenames based on ROLE_DEFINITIONS
         # e.g. {'app_label.add_model', 'app_label.change_model'}
-        root_model = root_field.related_model
         _, short_perm_codes = self.ROLE_DEFINITIONS[self.role]
-        perms = set(root_model.get_permission_codenames(short_perm_codes))
 
-        # Get the currently assigned permission codenames for the group on the root object.
-        current_perms = set(get_group_perms(self.group, root_obj))
-
-        # Compute which permissions to remove and which to add.
-        perms_to_remove = current_perms - perms
-        perms_to_add = perms - current_perms
-
-        # Assign these permissions (for found the PermRoot object) to this object's Group
-        for perm in perms_to_add:
-            assign_perm(perm, self.group, root_obj)
-
-        # Also, unassign these permissions as necessary
-        for perm in perms_to_remove:
-            remove_perm(perm, self.group, root_obj)
+        # We need to give/update permissions for the relevant permission target(s)
+        # for this root object - by default (and almost always) this is simply
+        # the root object itself; however, in certain cases (eg in the subclass
+        # of `PermRoot` called `HierarchicalPermRoot`) this may be different (eg
+        # it may be chidren objects)
+        for obj in root_obj.get_permission_targets():
+            update_permissions_for_object(
+                # These permissions...
+                short_perm_codes=short_perm_codes,
+                # ...over the object...
+                obj=obj,
+                # ...are given to the group
+                group=self.group,
+            )
 
     def save(self, *args, **kwargs):
         """
@@ -344,10 +358,6 @@ class PermRootGroup(PermRootFieldModelMixin, models.Model):
         """
         root_model_class = cls.get_root_field().related_model
         return root_model_class.get_user_join_rel().related_model
-
-    def get_permissions_root_obj(self, context=None) -> PermRootGroup:
-        """This object is the root itself."""
-        return self
 
     @staticmethod
     def get_root_obj(group_id: int) -> Optional[PermRoot]:
@@ -393,12 +403,20 @@ class PermRootUser(
     class Meta:
         abstract = True
 
-    perm_def_self = PermDef(None, condition_checker=lambda o, u, c: o.user_id == u.id)
+    # Permissions:
+    # All actions have perm_def_admin, which gives permissions to those who have
+    # the "change_permission" permission on the associated PermRoot object.
+    # All actions besides "destroy" have perm_def_self, which gives permissions
+    # to the user who is the user field of this PermRootUser.
+    perm_def_self = PermDef(
+        None,
+        condition_checker=lambda o, u, c: o.user_id == u.id,
+    )
     perm_def_admin = PermDef(
-        ["change_permission"], obj_getter="get_permissions_root_obj"
+        ["change_permission"],
+        obj_getter=lambda o, c: o.get_unretrieved("user"),
     )
     perm_defs = [perm_def_self, perm_def_admin]
-
     obj_action_perm_map = {
         "retrieve": perm_defs,
         "update": perm_defs,
@@ -410,6 +428,3 @@ class PermRootUser(
         root_field = self.get_root_field()
         root_obj = getattr(self, root_field.name)
         return f"{root_obj} / {self.user}"
-
-    def get_permissions_root_obj(self, context=None) -> object:
-        return self.get_unretrieved("user")
