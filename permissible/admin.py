@@ -84,17 +84,21 @@ class PermRootForm(forms.Form):
     add = forms.BooleanField(
         initial=True, required=False, label="Add groups (uncheck to remove)"
     )
+    role_changes = forms.JSONField(
+        widget=forms.HiddenInput, required=False, initial={"added": {}, "removed": {}}
+    )
+    # role_changes = forms.CharField(widget=forms.HiddenInput, required=False)
 
     def __init__(self, perm_root_class, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        perm_root_group_class = perm_root_class.get_group_join_rel().related_model
+        self.perm_root_group_class = perm_root_class.get_group_join_rel().related_model
         role_choices = (
             (role_value, role_label)
             for role_value, (
                 role_label,
                 _,
-            ) in perm_root_group_class.ROLE_DEFINITIONS.items()
+            ) in self.perm_root_group_class.ROLE_DEFINITIONS.items()
         )
 
         # Get related field, to make an autocomplete widget
@@ -105,10 +109,69 @@ class PermRootForm(forms.Form):
                 user=forms.ModelChoiceField(
                     queryset=User.objects.all(),
                     widget=AutocompleteSelect(users_field, admin.site),
+                    required=False,
                 ),
-                roles=forms.MultipleChoiceField(choices=role_choices),
+                roles=forms.MultipleChoiceField(choices=role_choices, required=False),
             )
         )
+
+    def clean_role_changes(self):
+        role_changes = self.cleaned_data.get("role_changes", {})
+        if not role_changes:
+            return
+
+        for role_changes_dict in role_changes.values():
+            for user_id_to_role_bool_dict in role_changes_dict.values():
+                for role in user_id_to_role_bool_dict.keys():
+                    if role not in self.perm_root_group_class.ROLE_DEFINITIONS:
+                        raise ValidationError(f"Invalid role: {role}")
+        return role_changes
+
+    def save(self, *args, **kwargs):
+        role_changes = self.cleaned_data.get("role_changes", {})
+        obj = kwargs.get("instance")
+        if not obj:
+            return
+
+        role_changes_added = role_changes.get("added", {})
+        role_changes_removed = role_changes.get("removed", {})
+
+        # Convert traditional form submission to role_changes format (overwrites role_changes)
+        if self.cleaned_data.get("user") and self.cleaned_data.get("roles"):
+            user_id = str(self.cleaned_data["user"].pk)
+            roles = self.cleaned_data["roles"]
+            if self.cleaned_data["add"]:
+                role_changes_added[user_id] = {role: True for role in roles}
+            else:
+                role_changes_removed[user_id] = {role: True for role in roles}
+
+        # Process additions
+        for user_id, roles in role_changes_added.items():
+            user = User.objects.get(pk=user_id)
+            roles_to_add = [role for role, should_add in roles.items() if should_add]
+
+            # Superuser check for restricted roles
+            if any(r in ("adm", "own") for r in roles_to_add):
+                if not kwargs.get("request").user.is_superuser:
+                    continue
+
+            if roles_to_add:
+                obj.add_user_to_groups(user=user, roles=roles_to_add)
+
+        # Process removals
+        for user_id, roles in role_changes_removed.items():
+            user = User.objects.get(pk=user_id)
+            roles_to_remove = [
+                role for role, should_remove in roles.items() if should_remove
+            ]
+
+            # Superuser check for restricted roles
+            if any(r in ("adm", "own") for r in roles_to_remove):
+                if not kwargs.get("request").user.is_superuser:
+                    continue
+
+            if roles_to_remove:
+                obj.remove_user_from_groups(user=user, roles=roles_to_remove)
 
 
 class PermRootAdminMixin(object):
@@ -134,24 +197,13 @@ class PermRootAdminMixin(object):
     def permissible_view(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
 
-        # Need "change permission" to access this view
         if not self.has_change_permission(request=request, obj=obj):
             raise Http404("Lacking permission")
 
         if request.method == "POST":
             form = PermRootForm(self.model, request.POST)
             if form.is_valid():
-                roles = form.cleaned_data["roles"] or []
-                # Furthermore, only superusers can add/remove users from the "adm" and "own" groups
-                if not request.user.is_superuser and any(
-                    r in roles for r in ("adm", "own")
-                ):
-                    raise ValidationError(f"Bad roles, must be superuser: {roles}")
-                user = form.cleaned_data["user"]
-                if form.cleaned_data["add"]:
-                    obj.add_user_to_groups(user=user, roles=roles)
-                else:
-                    obj.remove_user_from_groups(user=user, roles=roles)
+                form.save(instance=obj, request=request)
         else:
             form = PermRootForm(self.model)
 
