@@ -4,6 +4,8 @@
 {{ form.media }}
 {% endblock %}
 
+{% load custom_tags %}
+
 {% block content %}
 <div id="content-main">
 
@@ -18,28 +20,34 @@
         {% csrf_token %}
 
         <table style="margin-bottom: 30px">
-            <tr>
-                <th>Users</th>
-
+            <tr style="background-color: #eee">
+                <th rowspan="2">Users</th>
+                <th colspan="{{ role_to_users.keys|length }}" style="text-align: center">Roles</th>
+                <th rowspan="2">Resulting permissions on this {{ opts.model_name }}</th>
+            </tr>
+            <tr style="background-color: #eee">
                 {% for role in role_to_users.keys %}
-                <th>
-                    {{ role }}
-                </th>
+                <th>{{ role }}</th>
                 {% endfor %}
             </tr>
 
-            {% for user in users %}
+            {% for user in users_to_perms.keys %}
                 <tr>
                     <td>
-                        {{ user }}
+                        {{ user }} ({{ user.email }})
                     </td>
                     {% for role, role_users in role_to_users.items %}
-                        <td>
-                        {% if user in role_users %}
-                            ✔️
-                        {% endif %}
+                        <td style="border-left: 1px solid #eee; text-align: center">
+                        {% with user_id=user.pk|stringformat:"s" %}
+                            {% if user_id in role_users %}
+                                ✔️
+                            {% endif %}
+                        {% endwith %}
                         </td>
                     {% endfor %}
+                    <td>
+                        {{ users_to_perms|get_item:user|join:", " }}  <!-- Display user permissions with line breaks -->
+                    </td>
                 </tr>
             {% endfor %}
         </table>
@@ -58,4 +66,5 @@
     </form>
 
 </div>
+
 {% endblock %}

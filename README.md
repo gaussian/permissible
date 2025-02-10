@@ -61,7 +61,7 @@ way to create the permissions in the first place. That's where the next two
 features come in.
 
 
-## Feature 2: Simple permissions assignment using "root" models
+## Feature 2: Simple, role-based permissions assignment using "root" models (RBAC)
 
 The `permissible` library can also help automatically assign permissions based on
 certain "root" models. The root model is the model we should check permissions
@@ -71,12 +71,13 @@ permissions for the "project files", even though no specific permission exists
 for the "project file".
 Of course, it's easy to link a "project" to a "project file" through a foreign key.
 But `permissible` solves the problem of tying this to the Django `Group` model,
-which is what we use for permissions.
+which is what we use for permissions, according to **roles**.
+Each resulting `Group` (managed on the backend) corresponds to a single role.
 
 To accomplish this, `permissible` provides 3 base model classes that you should use:
 1. **`PermRoot`**: Make the root model (e.g. `Team`) derive from `PermRoot`
 2. **`PermRootGroup`**: Create a new model that derives from `PermRootGroup`
-and has a `ForeignKey` to the root model
+and has a `ForeignKey` to the root model - and defines `ROLE_DEFINITIONS`
 3. **`PermRootUser`**: Create a new model that derives from `PermRootUser`
 and has a `ForeignKey` to the root model (this model automatically adds and
 removes records when a user is a member of the appropriate `PermRootGroup`)
@@ -85,7 +86,16 @@ You can then simply adjust your permissions maps in `PermissibleMixin` to
 incorporate checking of the root model for permissions. See the documentation for
 `PermDef` and `PermissibleMixin.has_object_permissions` for info and examples.
 
-You can also use `PermRootAdminMixin` to help you manage the `PermRoot` records.
+Remember: `PermRoot` is the core model on which roles are defined (eg Project or
+Team) and `PermRootGroup` is the model that represents a single role (and
+therefore a single Django `auth.Group`) for a single `PermRoot` - eg Team Admins.
+The `PermRootGroup.ROLE_DEFINITIONS` defines what object permissions will be
+given to each role/group for every `PermRoot`.
+
+You can also use `PermRootAdminMixin` to help you manage the `PermRoot` records
+and the subsequent role-based access control:
+
+![RBAC admin](admin_1.png)
 
 
 ## Feature 3: Assignment on record creation

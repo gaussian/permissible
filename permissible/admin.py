@@ -17,6 +17,7 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
+
 from .models import PermissibleMixin, PermRootGroup
 
 if TYPE_CHECKING:
@@ -154,38 +155,51 @@ class PermRootAdminMixin(object):
         else:
             form = PermRootForm(self.model)
 
-        unordered_role_to_users = {
+        role_to_user_ids = {
             perm_root_group.role: [
                 str(u)
-                for u in perm_root_group.group.user_set.values_list(
-                    User.USERNAME_FIELD, flat=True
-                )
+                for u in perm_root_group.group.user_set.values_list("pk", flat=True)
             ]
             for perm_root_group in obj.get_group_joins().all()
         }
 
         base_roles = PermRootGroup.ROLE_DEFINITIONS.keys()
-        role_to_users = OrderedDict()
+        role_to_user_ids_sorted = OrderedDict()
         for role in base_roles:
-            role_to_users[role] = unordered_role_to_users.get(role, [])
-        for role in unordered_role_to_users.keys():
+            role_to_user_ids_sorted[role] = role_to_user_ids.get(role, [])
+        for role in role_to_user_ids.keys():
             if role not in base_roles:
-                role_to_users[role] = unordered_role_to_users.get(role, [])
+                role_to_user_ids_sorted[role] = role_to_user_ids.get(role, [])
 
-        users = list(set(chain(*role_to_users.values())))
+        # Get object permissions for each user (use guardian shortcut to populate object permissions if can import)
+        try:
+            from guardian.shortcuts import get_users_with_perms
 
-        show parents
-        show resulting perm groups across all
+            users_to_perms = get_users_with_perms(obj, attach_perms=True)
+        except Exception as e:
+            users_to_perms = {}
+
+        # Some users may be in PermGroups that do not have any permissions (eg in
+        # the `mem` group but not any others), so we need to include them
+        # (or guardian.shortcuts.get_users_with_perms have have failed to import!)
+        user_ids = list(set(chain(*role_to_user_ids_sorted.values())))
+        leftover_user_ids = list(
+            set([str(u.pk) for u in users_to_perms.keys()]).difference(set(user_ids))
+        )
+        users_to_perms.update(
+            {User.objects.get(pk=user_id): [] for user_id in leftover_user_ids}
+        )
 
         context = {
             "title": f"Add users to permissible groups of {obj}",
             "form": form,
-            "role_to_users": role_to_users,
-            "users": users,
+            "role_to_users": role_to_user_ids_sorted,
+            "users_to_perms": users_to_perms,  # Pass user permissions to the template
             "opts": self.model._meta,
             # Include common variables for rendering the admin template.
             **self.admin_site.each_context(request),
         }
+
         return TemplateResponse(request, "admin/permissible_changeform.html", context)
 
     readonly_fields = ("permissible_groups_link",)
