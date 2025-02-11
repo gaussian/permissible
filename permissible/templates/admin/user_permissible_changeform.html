@@ -34,7 +34,7 @@
                 <tr style="background-color: #eee">
                     <th rowspan="2">{{ perm_root_name|capfirst }}s</th>
                     <th colspan="{{ first_roles.keys|length|default:0 }}" style="text-align: center">Roles</th>
-                    <th rowspan="2">This user's permissions on this {{ perm_root_name|lower }}</th>
+                    <th rowspan="2">Resulting permissions this user has</th>
                 </tr>
                 <tr style="background-color: #eee">
                     {% for role in first_roles.keys %}
@@ -84,28 +84,40 @@
 </div>
 
 <script>
+// Track role changes that will be submitted with the form
 const roleChanges = {
-    added: {},
-    removed: {}
+    added: {},    // {root_id: {role: true}}
+    removed: {}   // {root_id: {role: true}}
 };
 
+// Update the hidden form field with current role changes
 function updateRoleChanges() {
     const jsonStr = JSON.stringify(roleChanges);
     document.getElementById('id_role_changes').value = jsonStr;
 }
 
+// Add click handlers to all role cells
 document.querySelectorAll('.role-cell').forEach(cell => {
     cell.addEventListener('click', function() {
+        // Get metadata about this cell
         const rootId = this.dataset.rootId;
         const role = this.dataset.role;
         const checkmark = this.querySelector('.checkmark');
-        const hasCheck = checkmark.textContent.includes('✔️');
-        const wasAdded = checkmark.textContent.includes('🔵');
-        const wasRemoved = checkmark.textContent.includes('❌');
         
+        // Determine current state
+        const hasCheck = checkmark.textContent.includes('✔️');  // Existing role
+        const wasAdded = checkmark.textContent.includes('🔵');  // Pending addition
+        const wasRemoved = checkmark.textContent.includes('❌'); // Pending removal
+        
+        // Initialize role tracking for this root if needed
         if (!roleChanges.added[rootId]) roleChanges.added[rootId] = {};
         if (!roleChanges.removed[rootId]) roleChanges.removed[rootId] = {};
         
+        // State machine for role changes:
+        // ✔️ (exists) -> ❌ (will remove)
+        // ❌ (will remove) -> ✔️ (cancel remove)
+        // 🔵 (will add) -> empty (cancel add)
+        // empty -> 🔵 (will add)
         if (hasCheck) {
             checkmark.textContent = '❌';
             roleChanges.removed[rootId][role] = true;
@@ -120,6 +132,7 @@ document.querySelectorAll('.role-cell').forEach(cell => {
             roleChanges.added[rootId][role] = true;
         }
         
+        // Clean up empty entries to keep the JSON clean
         if (Object.keys(roleChanges.added[rootId] || {}).length === 0) {
             delete roleChanges.added[rootId];
         }
@@ -127,6 +140,7 @@ document.querySelectorAll('.role-cell').forEach(cell => {
             delete roleChanges.removed[rootId];
         }
         
+        // Update the form field
         updateRoleChanges();
     });
 });

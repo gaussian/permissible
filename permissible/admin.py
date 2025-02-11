@@ -1,6 +1,16 @@
 """
-`permissible` (a `neutron` module by Gaussian)
-Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
+Django admin customization for the permissible module.
+Provides mixins and form classes for managing object-level permissions through
+the Django admin interface. The main components are:
+
+- PermissibleFormBase: Base form for handling role changes
+- UserPermRootForm: Form for managing a user's roles across multiple PermRoot objects
+- PermRootForm: Form for managing multiple users' roles on a single PermRoot object
+- BasePermissibleViewMixin: Shared view logic for permission management
+- UserPermissibleAdminMixin: Adds user-centric permission management to UserAdmin
+- PermRootAdminMixin: Adds permission management to PermRoot model admins
+
+This module requires django-guardian for object-level permissions.
 """
 
 from __future__ import annotations
@@ -85,39 +95,45 @@ class PermissibleObjectAssignMixin(object):
 
 
 class PermissibleFormBase(forms.Form):
+    """
+    Base form for handling role changes in permissible objects.
+
+    This form provides the foundation for both user-centric and object-centric
+    permission management. It handles:
+    - Role addition/removal through a checkbox
+    - JSON-based role change tracking
+    - Permission validation
+    - Role processing for both individual and batch changes
+    """
+
+    # Checkbox for toggling between adding and removing roles
     add = forms.BooleanField(
         initial=True, required=False, label="Add groups (uncheck to remove)"
     )
+
+    # Hidden field for tracking role changes made through UI interactions
     role_changes = forms.JSONField(
         widget=forms.HiddenInput, required=False, initial={"added": {}, "removed": {}}
     )
 
     def __init__(self, perm_root_class, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         self.perm_root_class = perm_root_class
         self.perm_root_group_class = perm_root_class.get_group_join_rel().related_model
-        role_choices = (
+        self.setup_fields()
+
+    def setup_fields(self):
+        """Override in subclasses to add additional fields"""
+        role_choices = [
             (role_value, role_label)
             for role_value, (
                 role_label,
                 _,
             ) in self.perm_root_group_class.ROLE_DEFINITIONS.items()
+        ]
+        self.fields["roles"] = forms.MultipleChoiceField(
+            choices=role_choices, required=False
         )
-
-        self.fields.update(
-            dict(
-                roles=forms.MultipleChoiceField(choices=role_choices, required=False),
-            )
-        )
-
-    @staticmethod
-    def user_has_permission_change_perm(
-        user: PermissionsMixin,
-        obj: PermissibleMixin,
-    ):
-        permission = obj.get_permission_codename("change_permission")
-        return user.has_perm(permission, obj)
 
     def clean_role_changes(self):
         role_changes = self.cleaned_data.get("role_changes", {})
@@ -131,90 +147,165 @@ class PermissibleFormBase(forms.Form):
                         raise ValidationError(f"Invalid role: {role}")
         return role_changes
 
-
-class PermRootForm(PermissibleFormBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # Get related field, to make an autocomplete widget
-        users_field = self.perm_root_class._meta.get_field("users")
-
-        self.fields.update(
-            dict(
-                user=forms.ModelChoiceField(
-                    queryset=User.objects.all(),
-                    widget=AutocompleteSelect(users_field, admin.site),
-                    required=False,
-                ),
-            )
-        )
-
-    def save(self, *args, **kwargs):
-        role_changes = self.cleaned_data.get("role_changes", {})
-        obj: PermRoot = kwargs.get("instance")
-        request = kwargs.get("request")
-        if not obj or not request:
+    def process_role_changes(self, role_changes, user=None, obj=None, request=None):
+        """Process role changes for either user->roots or root->users relationships."""
+        if not (request and (user or obj)):
             return
 
         role_changes_added = role_changes.get("added", {})
         role_changes_removed = role_changes.get("removed", {})
 
         # Convert traditional form submission to role_changes format (overwrites role_changes)
-        if self.cleaned_data.get("user") and self.cleaned_data.get("roles"):
-            user_id = str(self.cleaned_data["user"].pk)
-            roles = self.cleaned_data["roles"]
-            if self.cleaned_data["add"]:
-                role_changes_added[user_id] = {role: True for role in roles}
-            else:
-                role_changes_removed[user_id] = {role: True for role in roles}
+        if self.cleaned_data.get("roles"):
+            if obj and self.cleaned_data.get("user"):
+                user_id = str(self.cleaned_data["user"].pk)
+                roles = self.cleaned_data["roles"]
+                if self.cleaned_data["add"]:
+                    role_changes_added[user_id] = {role: True for role in roles}
+                else:
+                    role_changes_removed[user_id] = {role: True for role in roles}
+            elif user and self.cleaned_data.get("perm_root_obj"):
+                root_id = str(self.cleaned_data["perm_root_obj"].pk)
+                roles = self.cleaned_data["roles"]
+                if self.cleaned_data["add"]:
+                    role_changes_added[root_id] = {role: True for role in roles}
+                else:
+                    role_changes_removed[root_id] = {role: True for role in roles}
 
-        # Process additions
-        for user_id, roles in role_changes_added.items():
-            user = User.objects.get(pk=user_id)
-            roles_to_add = [role for role, should_add in roles.items() if should_add]
+        def process_roles(changes_dict, add_roles=True):
+            """
+            Process a batch of role changes (either additions or removals).
 
-            # Superuser check for restricted roles
-            if (
-                any(r in ("adm", "own") for r in roles_to_add)
-                and not request.user.is_superuser
-            ):
-                continue
+            This helper function handles both adding and removing roles by abstracting
+            the common logic between the two operations. It:
+            1. Processes each ID (either user or root) in the changes
+            2. Validates permissions for each change
+            3. Filters out invalid or unauthorized changes
+            4. Applies the changes in bulk
 
-            if roles_to_add:
-                obj.add_user_to_groups(user=user, roles=roles_to_add)
+            Args:
+                changes_dict: Dictionary of {id: {role: bool}} mappings
+                add_roles: True for adding roles, False for removing
+            """
+            for id_str, roles in changes_dict.items():
+                # Handle both directions: user->roots and root->users
+                # In user mode: id_str is a root_id, target_user is fixed
+                # In root mode: id_str is a user_id, root_obj is fixed
+                if user:
+                    root_obj = self.perm_root_class.objects.get(pk=id_str)
+                    target_user = user
+                else:
+                    root_obj = obj
+                    target_user = User.objects.get(pk=id_str)
 
-        # Process removals
-        for user_id, roles in role_changes_removed.items():
-            user = User.objects.get(pk=user_id)
-            roles_to_remove = [
-                role for role, should_remove in roles.items() if should_remove
-            ]
+                # Skip if requesting user lacks permission
+                if not self.user_has_permission_change_perm(request.user, root_obj):
+                    continue
 
-            # Superuser check for restricted roles
-            if (
-                any(r in ("adm", "own") for r in roles_to_remove)
-                and not request.user.is_superuser
-            ):
-                continue
+                # Filter roles that should be changed
+                roles_to_change = [
+                    role for role, should_change in roles.items() if should_change
+                ]
+                if not roles_to_change:
+                    continue
 
-            if roles_to_remove:
-                obj.remove_user_from_groups(user=user, roles=roles_to_remove)
+                # Only superusers can modify admin/owner roles
+                restricted_roles = ("adm", "own")
+                if (
+                    any(r in restricted_roles for r in roles_to_change)
+                    and not request.user.is_superuser
+                ):
+                    continue
+
+                # Apply the changes using the appropriate method
+                method = (
+                    root_obj.add_user_to_groups
+                    if add_roles
+                    else root_obj.remove_user_from_groups
+                )
+                method(user=target_user, roles=roles_to_change)
+
+        # Use the same logic for both additions and removals
+        process_roles(role_changes_added, add_roles=True)
+        process_roles(role_changes_removed, add_roles=False)
+
+    @staticmethod
+    def user_has_permission_change_perm(user, obj):
+        """
+        Check if a user has permission to change permissions on an object.
+
+        Uses django-guardian's permission system to verify the user has the
+        specific 'change_permission' permission on the given object.
+        """
+        permission = obj.get_permission_codename("change_permission")
+        return user.has_perm(permission, obj)
+
+
+class PermRootForm(PermissibleFormBase):
+    def setup_fields(self):
+        super().setup_fields()
+        self.fields["user"] = forms.ModelChoiceField(
+            queryset=User.objects.all(),
+            widget=AutocompleteSelect(
+                self.perm_root_class._meta.get_field("users"), admin.site
+            ),
+            required=False,
+        )
+
+    def save(self, *args, **kwargs):
+        self.process_role_changes(
+            self.cleaned_data.get("role_changes", {}),
+            obj=kwargs.get("instance"),
+            request=kwargs.get("request"),
+        )
+
+
+class UserPermRootForm(PermissibleFormBase):
+    def setup_fields(self):
+        super().setup_fields()
+        self.fields["perm_root_obj"] = forms.ModelChoiceField(
+            queryset=self.perm_root_class.objects.all(),
+            widget=AutocompleteSelect(
+                self.perm_root_class.get_user_join_rel().field, admin.site
+            ),
+            required=False,
+            label=f"Add {self.perm_root_class._meta.verbose_name} to user",
+        )
+
+    def save(self, *args, **kwargs):
+        self.process_role_changes(
+            self.cleaned_data.get("role_changes", {}),
+            user=kwargs.get("instance"),
+            request=kwargs.get("request"),
+        )
 
 
 class BasePermissibleViewMixin:
-    """Shared logic between PermRoot-centric and User-centric views"""
+    """
+    Shared view logic for permission management views.
 
-    def get_role_choices(self, perm_root_group_class):
-        return [
-            (role_value, role_label)
-            for role_value, (
-                role_label,
-                _,
-            ) in perm_root_group_class.ROLE_DEFINITIONS.items()
-        ]
+    Provides common utilities for:
+    - Retrieving role mappings
+    - Getting object permissions
+    - Processing permission views
+    - Building context data
+    """
 
     def get_role_to_user_id(self, perm_root_obj):
-        """Get role->user_ids mapping for a single PermRoot"""
+        """
+        Build a mapping of roles to user IDs for a PermRoot object.
+
+        This method:
+        1. Gets all group joins (role assignments) for the object
+        2. Maps each role to its assigned user IDs
+        3. Orders roles according to ROLE_DEFINITIONS
+        4. Ensures all base roles are present even if empty
+        5. Preserves any custom roles not in base roles
+
+        Returns:
+            OrderedDict: {role_name: [user_id_str, ...], ...}
+        """
+        # First get all current role assignments
         role_to_user_ids = {
             perm_root_group.role: [
                 str(u)
@@ -223,12 +314,17 @@ class BasePermissibleViewMixin:
             for perm_root_group in perm_root_obj.get_group_joins().all()
         }
 
+        # Get the predefined roles from the model
         base_roles = (
             perm_root_obj.get_group_join_rel().related_model.ROLE_DEFINITIONS.keys()
         )
+
+        # Create ordered mapping with base roles first
         role_to_user_ids_sorted = OrderedDict()
+        # Add base roles in their defined order
         for role in base_roles:
             role_to_user_ids_sorted[role] = role_to_user_ids.get(role, [])
+        # Add any custom roles that weren't in base_roles
         for role in role_to_user_ids.keys():
             if role not in base_roles:
                 role_to_user_ids_sorted[role] = role_to_user_ids.get(role, [])
@@ -247,92 +343,59 @@ class BasePermissibleViewMixin:
         except Exception:
             return {}
 
+    def handle_permission_view(
+        self, request, obj, form_class, template_name, context_extras=None
+    ):
+        """
+        Common view handler for permission management views.
 
-class UserPermRootForm(PermissibleFormBase):
-    """Form that handles role changes for multiple PermRoots"""
+        Handles:
+        - Permission checking
+        - Form processing
+        - Context building
+        - Template rendering
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        Args:
+            request: The HTTP request
+            obj: The object being modified (User or PermRoot)
+            form_class: Form class to use (UserPermRootForm or PermRootForm)
+            template_name: Template to render
+            context_extras: Additional context data
+        """
+        if obj and not PermissibleFormBase.user_has_permission_change_perm(
+            request.user, obj
+        ):
+            raise Http404("Lacking permission to change permissions")
 
-        self.fields.update(
-            dict(
-                perm_root_obj=forms.ModelChoiceField(
-                    queryset=self.perm_root_class.objects.all(),
-                    widget=AutocompleteSelect(
-                        self.perm_root_class.get_user_join_rel().field, admin.site
-                    ),
-                    required=False,
-                    label=f"Add {self.perm_root_class._meta.verbose_name} to user",
-                ),
-            )
-        )
+        if request.method == "POST":
+            form = form_class(request.POST)
+            if form.is_valid():
+                form.save(instance=obj, request=request)
+            return redirect(request.path)
+        else:
+            form = form_class()
 
-    def save(self, *args, **kwargs):
-        role_changes = self.cleaned_data.get("role_changes", {})
-        user = kwargs.get("instance")
-        request = kwargs.get("request")
-        if not user or not request:
-            return
+        context = {
+            "form": form,
+            "opts": self.model._meta,
+            **self.admin_site.each_context(request),
+            **(context_extras or {}),
+        }
 
-        role_changes_added = role_changes.get("added", {})
-        role_changes_removed = role_changes.get("removed", {})
-
-        # Convert traditional form submission to role_changes format
-        if self.cleaned_data.get("perm_root_obj") and self.cleaned_data.get("roles"):
-            root_id = str(self.cleaned_data["perm_root_obj"].pk)
-            roles = self.cleaned_data["roles"]
-            if self.cleaned_data["add"]:
-                role_changes_added[root_id] = {role: True for role in roles}
-            else:
-                role_changes_removed[root_id] = {role: True for role in roles}
-
-        # Process additions
-        for root_id, roles in role_changes_added.items():
-            root_obj: PermRoot = self.perm_root_class.objects.get(pk=root_id)
-            roles_to_add = [role for role, should_add in roles.items() if should_add]
-
-            # Make sure the request user has change permission on the root object
-            if not PermissibleFormBase.user_has_permission_change_perm(
-                user=request.user, obj=root_obj
-            ):
-                continue
-
-            # Superuser check for restricted roles
-            if (
-                any(r in ("adm", "own") for r in roles_to_add)
-                and not request.user.is_superuser
-            ):
-                continue
-
-            if roles_to_add:
-                print(f"Adding {user} to {root_obj} with roles {roles_to_add}")
-                root_obj.add_user_to_groups(user=user, roles=roles_to_add)
-
-        for root_id, roles in role_changes_removed.items():
-            root_obj: PermRoot = self.perm_root_class.objects.get(pk=root_id)
-            roles_to_remove = [
-                role for role, should_remove in roles.items() if should_remove
-            ]
-
-            # Make sure the request user has change permission on the root object
-            if not PermissibleFormBase.user_has_permission_change_perm(
-                user=request.user, obj=root_obj
-            ):
-                continue
-
-            if (
-                any(r in ("adm", "own") for r in roles_to_remove)
-                and not request.user.is_superuser
-            ):
-                continue
-
-            if roles_to_remove:
-                root_obj.remove_user_from_groups(user=user, roles=roles_to_remove)
+        return TemplateResponse(request, template_name, context)
 
 
 class UserPermissibleAdminMixin(BasePermissibleViewMixin):
-    """Mixin for UserAdmin to show/edit user's roles across all PermRoots of a type"""
+    """
+    Mixin for UserAdmin that adds permission management capabilities.
 
+    Allows managing a user's roles across multiple PermRoot objects through
+    the Django admin interface. Supports multiple types of PermRoot objects
+    (e.g., Teams, Projects) through the permissible_root_classes mapping.
+    """
+
+    # Dictionary mapping type names to PermRoot model classes
+    # Example: {'team': TeamModel, 'project': ProjectModel}
     permissible_root_classes: Dict[str, Type[PermRoot]] = {}
 
     def get_urls(self):
@@ -353,50 +416,45 @@ class UserPermissibleAdminMixin(BasePermissibleViewMixin):
         return custom_urls + urls
 
     def user_permissible_view(self, request, object_id, perm_root_type):
-        user = self.model.objects.get(pk=object_id)
+        """
+        View for managing a user's roles across all objects of a specific type.
 
+        Shows a matrix of:
+        - Rows: PermRoot objects
+        - Columns: Available roles
+        - Cells: Checkboxes for role assignment
+        """
+        user = self.model.objects.get(pk=object_id)
         try:
             perm_root_class = self.permissible_root_classes[perm_root_type]
         except KeyError:
             raise Http404(f"Unknown PermRoot type: {perm_root_type}")
 
-        if request.method == "POST":
-            form = UserPermRootForm(perm_root_class, request.POST)
-            if form.is_valid():
-                form.save(instance=user, request=request)
-            return redirect(request.path)  # Redirect to clear form data
-        else:
-            form = UserPermRootForm(perm_root_class)
-
-        # Get all PermRoots this user has is associated with
         perm_roots = perm_root_class.objects.filter(users=user)
-
-        # Build data structure for templateg
-        root_to_roles = {}
-        for root in perm_roots:
-            root_to_roles[root] = {
+        root_to_roles = {
+            root: {
                 "roles": self.get_role_to_user_id(root),
                 "perms": self.get_perms_for_obj(root).get(user, []),
             }
-
-        # Get the roles from the first root for the column headers
-        first_roles = (
-            next(iter(root_to_roles.values()))["roles"] if root_to_roles else {}
-        )
-
-        context = {
-            "title": f"Edit {user}'s roles in {perm_root_type}s",
-            "form": form,
-            "root_to_roles": root_to_roles,
-            "first_roles": first_roles,
-            "opts": self.model._meta,
-            "user": user,
-            "perm_root_name": perm_root_class._meta.verbose_name,
-            **self.admin_site.each_context(request),
+            for root in perm_roots
         }
 
-        return TemplateResponse(
-            request, "admin/user_permissible_changeform.html", context
+        context_extras = {
+            "title": f"Edit {user}'s roles in {perm_root_type}s",
+            "root_to_roles": root_to_roles,
+            "first_roles": (
+                next(iter(root_to_roles.values()))["roles"] if root_to_roles else {}
+            ),
+            "user": user,
+            "perm_root_name": perm_root_class._meta.verbose_name,
+        }
+
+        return self.handle_permission_view(
+            request,
+            user,
+            lambda *args: UserPermRootForm(perm_root_class, *args),
+            "admin/user_permissible_changeform.html",
+            context_extras,
         )
 
     def permissible_groups_link(self, obj):
@@ -414,13 +472,22 @@ class UserPermissibleAdminMixin(BasePermissibleViewMixin):
 
 
 class PermRootAdminMixin(BasePermissibleViewMixin):
+    """
+    Mixin for PermRoot model admins that adds permission management capabilities.
+
+    Allows managing multiple users' roles on a single PermRoot object through
+    the Django admin interface. Also provides utilities for resetting permissions
+    and managing permission groups.
+    """
+
+    actions = ("reset_perm_groups",)
+
     @admin.action(description="Create or reset group/role permissions")
     def reset_perm_groups(self, request, queryset):
+        """Admin action to reset permission groups for selected objects"""
         for root_obj in queryset:
             root_obj: PermRoot
             root_obj.reset_perm_groups()
-
-    actions = (reset_perm_groups,)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -434,29 +501,19 @@ class PermRootAdminMixin(BasePermissibleViewMixin):
         return custom_urls + urls
 
     def permissible_view(self, request, object_id):
+        """
+        View for managing all users' roles on a specific object.
+
+        Shows a matrix of:
+        - Rows: Users
+        - Columns: Available roles
+        - Cells: Checkboxes for role assignment
+        """
         obj = self.model.objects.get(pk=object_id)
-
-        if not PermissibleFormBase.user_has_permission_change_perm(
-            user=request.user, obj=obj
-        ):
-            raise Http404("Lacking permission to change permissions")
-
-        if request.method == "POST":
-            form = PermRootForm(self.model, request.POST)
-            if form.is_valid():
-                form.save(instance=obj, request=request)
-            return redirect(request.path)  # Redirect to clear form data
-        else:
-            form = PermRootForm(self.model)
-
         role_to_user_id = self.get_role_to_user_id(obj)
-
-        # Get object permissions for each user
         users_to_perms = self.get_perms_for_obj(obj)
 
-        # Some users may be in PermGroups that do not have any permissions (eg in
-        # the `mem` group but not any others), so we need to include them
-        # (or guardian.shortcuts.get_users_with_perms have have failed to import!)
+        # Add users that have permissions but no roles
         user_ids = list(set(chain(*role_to_user_id.values())))
         leftover_user_ids = list(
             set([str(u.pk) for u in users_to_perms.keys()]).difference(set(user_ids))
@@ -465,17 +522,19 @@ class PermRootAdminMixin(BasePermissibleViewMixin):
             {User.objects.get(pk=user_id): [] for user_id in leftover_user_ids}
         )
 
-        context = {
+        context_extras = {
             "title": f"Add users to permissible groups of {obj}",
-            "form": form,
             "role_to_user_id": role_to_user_id,
-            "users_to_perms": users_to_perms,  # Pass user permissions to the template
-            "opts": self.model._meta,
-            # Include common variables for rendering the admin template.
-            **self.admin_site.each_context(request),
+            "users_to_perms": users_to_perms,
         }
 
-        return TemplateResponse(request, "admin/permissible_changeform.html", context)
+        return self.handle_permission_view(
+            request,
+            obj,
+            lambda *args: PermRootForm(self.model, *args),
+            "admin/permissible_changeform.html",
+            context_extras,
+        )
 
     readonly_fields = ("permissible_groups_link",)
 
