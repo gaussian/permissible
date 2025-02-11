@@ -12,9 +12,11 @@ from typing import TYPE_CHECKING, Dict, Type
 from django.contrib import admin
 from django.contrib.admin.widgets import AutocompleteSelect
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import PermissionsMixin
 from django.core.exceptions import ValidationError
 from django import forms
 from django.http import Http404
+from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
@@ -56,7 +58,7 @@ class PermissibleAdminMixin(object):
             if not self.model.has_global_permission(**perm_check_kwargs):
                 return False
             if action != "create":
-                # Not sure how we"d reach here...
+                # Not sure how we'd reach here...
                 return False
             # For "create" action, we must create a dummy object from request data
             # and use it to check permissions against
@@ -93,6 +95,7 @@ class PermissibleFormBase(forms.Form):
     def __init__(self, perm_root_class, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self.perm_root_class = perm_root_class
         self.perm_root_group_class = perm_root_class.get_group_join_rel().related_model
         role_choices = (
             (role_value, role_label)
@@ -108,13 +111,33 @@ class PermissibleFormBase(forms.Form):
             )
         )
 
+    @staticmethod
+    def user_has_permission_change_perm(
+        user: PermissionsMixin,
+        obj: PermissibleMixin,
+    ):
+        permission = obj.get_permission_codename("change_permission")
+        return user.has_perm(permission, obj)
+
+    def clean_role_changes(self):
+        role_changes = self.cleaned_data.get("role_changes", {})
+        if not role_changes:
+            return {}
+
+        for role_changes_dict in role_changes.values():
+            for obj_id_to_role_bool_dict in role_changes_dict.values():
+                for role in obj_id_to_role_bool_dict.keys():
+                    if role not in self.perm_root_group_class.ROLE_DEFINITIONS:
+                        raise ValidationError(f"Invalid role: {role}")
+        return role_changes
+
 
 class PermRootForm(PermissibleFormBase):
-    def __init__(self, perm_root_class, *args, **kwargs):
-        super().__init__(perm_root_class=perm_root_class, *args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         # Get related field, to make an autocomplete widget
-        users_field = perm_root_class._meta.get_field("users")
+        users_field = self.perm_root_class._meta.get_field("users")
 
         self.fields.update(
             dict(
@@ -126,22 +149,11 @@ class PermRootForm(PermissibleFormBase):
             )
         )
 
-    def clean_role_changes(self):
-        role_changes = self.cleaned_data.get("role_changes", {})
-        if not role_changes:
-            return
-
-        for role_changes_dict in role_changes.values():
-            for user_id_to_role_bool_dict in role_changes_dict.values():
-                for role in user_id_to_role_bool_dict.keys():
-                    if role not in self.perm_root_group_class.ROLE_DEFINITIONS:
-                        raise ValidationError(f"Invalid role: {role}")
-        return role_changes
-
     def save(self, *args, **kwargs):
         role_changes = self.cleaned_data.get("role_changes", {})
-        obj = kwargs.get("instance")
-        if not obj:
+        obj: PermRoot = kwargs.get("instance")
+        request = kwargs.get("request")
+        if not obj or not request:
             return
 
         role_changes_added = role_changes.get("added", {})
@@ -162,9 +174,11 @@ class PermRootForm(PermissibleFormBase):
             roles_to_add = [role for role, should_add in roles.items() if should_add]
 
             # Superuser check for restricted roles
-            if any(r in ("adm", "own") for r in roles_to_add):
-                if not kwargs.get("request").user.is_superuser:
-                    continue
+            if (
+                any(r in ("adm", "own") for r in roles_to_add)
+                and not request.user.is_superuser
+            ):
+                continue
 
             if roles_to_add:
                 obj.add_user_to_groups(user=user, roles=roles_to_add)
@@ -177,9 +191,11 @@ class PermRootForm(PermissibleFormBase):
             ]
 
             # Superuser check for restricted roles
-            if any(r in ("adm", "own") for r in roles_to_remove):
-                if not kwargs.get("request").user.is_superuser:
-                    continue
+            if (
+                any(r in ("adm", "own") for r in roles_to_remove)
+                and not request.user.is_superuser
+            ):
+                continue
 
             if roles_to_remove:
                 obj.remove_user_from_groups(user=user, roles=roles_to_remove)
@@ -235,27 +251,83 @@ class BasePermissibleViewMixin:
 class UserPermRootForm(PermissibleFormBase):
     """Form that handles role changes for multiple PermRoots"""
 
-    def __init__(self, perm_root_class, *args, **kwargs):
-        super().__init__(perm_root_class=perm_root_class, *args, **kwargs)
-
-        # Get related field, to make an autocomplete widget
-        # Get the ManyToManyField from your perm_root_class (e.g. Team)
-        perm_root_field = perm_root_class._meta.get_field("users")
-        # Get the name Django uses for the reverse accessor on the User model.
-        # Using get_accessor_name() will return (eg) "teams" (the related_name, if provided)
-        reverse_field_name = perm_root_field.remote_field.get_accessor_name()
-        # Now retrieve the field instance from the User model
-        perm_root_obj_field = User._meta.get_field(reverse_field_name)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         self.fields.update(
             dict(
                 perm_root_obj=forms.ModelChoiceField(
-                    queryset=perm_root_class.objects.all(),
-                    widget=AutocompleteSelect(perm_root_obj_field, admin.site),
+                    queryset=self.perm_root_class.objects.all(),
+                    widget=AutocompleteSelect(
+                        self.perm_root_class.get_user_join_rel().field, admin.site
+                    ),
                     required=False,
+                    label=f"Add {self.perm_root_class._meta.verbose_name} to user",
                 ),
             )
         )
+
+    def save(self, *args, **kwargs):
+        role_changes = self.cleaned_data.get("role_changes", {})
+        user = kwargs.get("instance")
+        request = kwargs.get("request")
+        if not user or not request:
+            return
+
+        role_changes_added = role_changes.get("added", {})
+        role_changes_removed = role_changes.get("removed", {})
+
+        # Convert traditional form submission to role_changes format
+        if self.cleaned_data.get("perm_root_obj") and self.cleaned_data.get("roles"):
+            root_id = str(self.cleaned_data["perm_root_obj"].pk)
+            roles = self.cleaned_data["roles"]
+            if self.cleaned_data["add"]:
+                role_changes_added[root_id] = {role: True for role in roles}
+            else:
+                role_changes_removed[root_id] = {role: True for role in roles}
+
+        # Process additions
+        for root_id, roles in role_changes_added.items():
+            root_obj: PermRoot = self.perm_root_class.objects.get(pk=root_id)
+            roles_to_add = [role for role, should_add in roles.items() if should_add]
+
+            # Make sure the request user has change permission on the root object
+            if not PermissibleFormBase.user_has_permission_change_perm(
+                user=request.user, obj=root_obj
+            ):
+                continue
+
+            # Superuser check for restricted roles
+            if (
+                any(r in ("adm", "own") for r in roles_to_add)
+                and not request.user.is_superuser
+            ):
+                continue
+
+            if roles_to_add:
+                print(f"Adding {user} to {root_obj} with roles {roles_to_add}")
+                root_obj.add_user_to_groups(user=user, roles=roles_to_add)
+
+        for root_id, roles in role_changes_removed.items():
+            root_obj: PermRoot = self.perm_root_class.objects.get(pk=root_id)
+            roles_to_remove = [
+                role for role, should_remove in roles.items() if should_remove
+            ]
+
+            # Make sure the request user has change permission on the root object
+            if not PermissibleFormBase.user_has_permission_change_perm(
+                user=request.user, obj=root_obj
+            ):
+                continue
+
+            if (
+                any(r in ("adm", "own") for r in roles_to_remove)
+                and not request.user.is_superuser
+            ):
+                continue
+
+            if roles_to_remove:
+                root_obj.remove_user_from_groups(user=user, roles=roles_to_remove)
 
 
 class UserPermissibleAdminMixin(BasePermissibleViewMixin):
@@ -280,37 +352,6 @@ class UserPermissibleAdminMixin(BasePermissibleViewMixin):
             )
         return custom_urls + urls
 
-    def save_role_changes(self, request, user, perm_root_class, role_changes):
-        """Handle the role changes for a specific user across multiple PermRoots"""
-        role_changes_added = role_changes.get("added", {})
-        role_changes_removed = role_changes.get("removed", {})
-
-        for root_id, roles in role_changes_added.items():
-            root_obj = perm_root_class.objects.get(pk=root_id)
-            roles_to_add = [role for role, should_add in roles.items() if should_add]
-
-            # Superuser check for restricted roles
-            if any(r in ("adm", "own") for r in roles_to_add):
-                if not request.user.is_superuser:
-                    continue
-
-            if roles_to_add:
-                root_obj.add_user_to_groups(user=user, roles=roles_to_add)
-
-        for root_id, roles in role_changes_removed.items():
-            root_obj = perm_root_class.objects.get(pk=root_id)
-            roles_to_remove = [
-                role for role, should_remove in roles.items() if should_remove
-            ]
-
-            # Superuser check for restricted roles
-            if any(r in ("adm", "own") for r in roles_to_remove):
-                if not request.user.is_superuser:
-                    continue
-
-            if roles_to_remove:
-                root_obj.remove_user_from_groups(user=user, roles=roles_to_remove)
-
     def user_permissible_view(self, request, object_id, perm_root_type):
         user = self.model.objects.get(pk=object_id)
 
@@ -322,15 +363,15 @@ class UserPermissibleAdminMixin(BasePermissibleViewMixin):
         if request.method == "POST":
             form = UserPermRootForm(perm_root_class, request.POST)
             if form.is_valid():
-                role_changes = form.cleaned_data.get("role_changes", {})
-                self.save_role_changes(request, user, perm_root_class, role_changes)
+                form.save(instance=user, request=request)
+            return redirect(request.path)  # Redirect to clear form data
         else:
             form = UserPermRootForm(perm_root_class)
 
-        # Get all PermRoots of this type
-        perm_roots = perm_root_class.objects.all()
+        # Get all PermRoots this user has is associated with
+        perm_roots = perm_root_class.objects.filter(users=user)
 
-        # Build data structure for template
+        # Build data structure for templateg
         root_to_roles = {}
         for root in perm_roots:
             root_to_roles[root] = {
@@ -350,6 +391,7 @@ class UserPermissibleAdminMixin(BasePermissibleViewMixin):
             "first_roles": first_roles,
             "opts": self.model._meta,
             "user": user,
+            "perm_root_name": perm_root_class._meta.verbose_name,
             **self.admin_site.each_context(request),
         }
 
@@ -394,13 +436,16 @@ class PermRootAdminMixin(BasePermissibleViewMixin):
     def permissible_view(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
 
-        if not self.has_change_permission(request=request, obj=obj):
-            raise Http404("Lacking permission")
+        if not PermissibleFormBase.user_has_permission_change_perm(
+            user=request.user, obj=obj
+        ):
+            raise Http404("Lacking permission to change permissions")
 
         if request.method == "POST":
             form = PermRootForm(self.model, request.POST)
             if form.is_valid():
                 form.save(instance=obj, request=request)
+            return redirect(request.path)  # Redirect to clear form data
         else:
             form = PermRootForm(self.model)
 

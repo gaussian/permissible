@@ -10,7 +10,6 @@ from itertools import chain
 from typing import TYPE_CHECKING, Dict, List, Literal, Type, Union, Optional
 
 from django.contrib.auth.models import PermissionsMixin
-from django.db import models
 
 
 from .unretrieved_model_mixin import UnRetrievedModelMixin

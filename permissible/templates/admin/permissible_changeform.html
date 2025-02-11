@@ -31,46 +31,49 @@
 
     <form method="post" id="{{ opts.model_name }}_form" novalidate>
         {% csrf_token %}
-        <!-- {{ form.role_changes }} -->
 
-        <table style="margin-bottom: 30px">
-            <tr style="background-color: #eee">
-                <th rowspan="2">Users</th>
-                <th colspan="{{ role_to_user_id.keys|length }}" style="text-align: center">Roles</th>
-                <th rowspan="2">Resulting permissions on this {{ opts.model_name }}</th>
-            </tr>
-            <tr style="background-color: #eee">
-                {% for role in role_to_user_id.keys %}
-                <th>{{ role }}</th>
-                {% endfor %}
-            </tr>
-
-            {% for user in users_to_perms.keys %}
-                <tr>
-                    <td>
-                        {% admin_change_url user as change_url %}
-                        <a href="{% url change_url user.pk %}">
-                            {{ user }} ({{ user.email }})
-                        </a>
-                    </td>
-                    {% for role, role_users in role_to_user_id.items %}
-                        <td class="role-cell"
-                            data-user-id="{{ user.pk }}" data-role="{{ role }}">
-                        {% with user_id=user.pk|stringformat:"s" %}
-                            <span class="checkmark">
-                            {% if user_id in role_users %}
-                                ✔️
-                            {% endif %}
-                            </span>
-                        {% endwith %}
-                        </td>
-                    {% endfor %}
-                    <td>
-                        {{ users_to_perms|get_item:user|join:", " }}  <!-- Display user permissions with line breaks -->
-                    </td>
+        <div style="overflow-x: auto;">
+            <table style="margin-bottom: 30px">
+                <tr style="background-color: #eee">
+                    <th rowspan="2">Users</th>
+                    <th colspan="{{ role_to_user_id.keys|length }}" style="text-align: center">Roles</th>
+                    <th rowspan="2">Resulting permissions on this {{ opts.model_name }}</th>
                 </tr>
-            {% endfor %}
-        </table>
+                <tr style="background-color: #eee">
+                    {% for role in role_to_user_id.keys %}
+                    <th>{{ role }}</th>
+                    {% endfor %}
+                </tr>
+
+                {% for user in users_to_perms.keys %}
+                    <tr>
+                        <td>
+                            {% admin_change_url user as change_url %}
+                            <a href="{% url change_url user.pk %}">
+                                {{ user }}
+                                <br/>
+                                ({{ user.email }})
+                            </a>
+                        </td>
+                        {% for role, role_users in role_to_user_id.items %}
+                            <td class="role-cell"
+                                data-user-id="{{ user.pk }}" data-role="{{ role }}">
+                            {% with user_id=user.pk|stringformat:"s" %}
+                                <span class="checkmark">
+                                {% if user_id in role_users %}
+                                    ✔️
+                                {% endif %}
+                                </span>
+                            {% endwith %}
+                            </td>
+                        {% endfor %}
+                        <td>
+                            {{ users_to_perms|get_item:user|join:", " }}  <!-- Display user permissions with line breaks -->
+                        </td>
+                    </tr>
+                {% endfor %}
+            </table>
+        </div>
 
         <fieldset class="module aligned">
             {% for field in form %}

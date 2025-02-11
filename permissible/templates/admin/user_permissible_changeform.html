@@ -28,40 +28,56 @@
 
     <form method="post" id="{{ opts.model_name }}_form" novalidate>
         {% csrf_token %}
-        {{ form.role_changes }}
 
-        <table style="margin-bottom: 30px">
-            <tr style="background-color: #eee">
-                <th rowspan="2">PermRoot Objects</th>
-                <th colspan="{{ first_roles.keys|length|default:0 }}" style="text-align: center">Roles</th>
-                <th rowspan="2">User's permissions on this object</th>
-            </tr>
-            <tr style="background-color: #eee">
-                {% for role in first_roles.keys %}
-                    <th>{{ role }}</th>
-                {% endfor %}
-            </tr>
-
-            {% for root, data in root_to_roles.items %}
-                <tr>
-                    <td>{{ root }}</td>
-                    {% for role, role_users in data.roles.items %}
-                        <td class="role-cell"
-                            data-root-id="{{ root.pk }}" 
-                            data-role="{{ role }}">
-                            <span class="checkmark">
-                            {% if user.pk|stringformat:"s" in role_users %}
-                                ✔️
-                            {% endif %}
-                            </span>
-                        </td>
-                    {% endfor %}
-                    <td>
-                        {{ data.perms|join:", " }}
-                    </td>
+        <div style="overflow-x: auto;">
+            <table style="margin-bottom: 30px">
+                <tr style="background-color: #eee">
+                    <th rowspan="2">{{ perm_root_name|capfirst }}s</th>
+                    <th colspan="{{ first_roles.keys|length|default:0 }}" style="text-align: center">Roles</th>
+                    <th rowspan="2">This user's permissions on this {{ perm_root_name|lower }}</th>
                 </tr>
+                <tr style="background-color: #eee">
+                    {% for role in first_roles.keys %}
+                        <th>{{ role }}</th>
+                    {% endfor %}
+                </tr>
+
+                {% for root, data in root_to_roles.items %}
+                    <tr>
+                        <td>
+                            {% admin_change_url root as change_url %}
+                            <a href="{% url change_url root.pk %}">
+                                {{ root }}
+                            </a>
+                        </td>
+                        {% for role, role_users in data.roles.items %}
+                            <td class="role-cell"
+                                data-root-id="{{ root.pk }}" 
+                                data-role="{{ role }}">
+                                <span class="checkmark">
+                                {% if user.pk|stringformat:"s" in role_users %}
+                                    ✔️
+                                {% endif %}
+                                </span>
+                            </td>
+                        {% endfor %}
+                        <td>
+                            {{ data.perms|join:", " }}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <fieldset class="module aligned">
+            {% for field in form %}
+                <div class="form-row" style="padding: 10px 0;">
+                    {{ field.label_tag }}
+                    {{ field }}
+                    {{ field.errors }}
+                </div>
             {% endfor %}
-        </table>
+        </fieldset>
 
         <input type="submit" value="Save Changes" name="_submit">
     </form>
