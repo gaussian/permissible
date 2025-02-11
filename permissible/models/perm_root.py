@@ -16,7 +16,7 @@ from django.dispatch import receiver
 
 from .base_perm_root import AbstractModelMetaclass, BasePermRoot
 from .permissible_mixin import PermissibleMixin
-from .utils import update_permissions_for_object
+from .utils import clear_permissions_for_class, update_permissions_for_object
 from permissible.perm_def import PermDef
 from permissible.utils.signals import get_subclasses
 
@@ -89,6 +89,8 @@ class PermRoot(BasePermRoot):
             self.get_group_join_rel().related_model
         )
 
+        print(f"Resetting permissions for PermRoot {self}")
+
         # Create/update PermRootGroup for each role in possible roles
         role_choices = root_group_model_class._meta.get_field("role").choices
         assert isinstance(role_choices, Iterable)
@@ -100,7 +102,7 @@ class PermRoot(BasePermRoot):
             # Force reassigning of permissions if not a new PermRootGroup
             if not created:
                 root_group_obj: PermRootGroup
-                root_group_obj.reset_permissions_for_group()
+                root_group_obj.reset_permissions_for_group(clear_existing=True)
 
     def get_group_ids_for_roles(self, roles=None):
         root_group_model_class = self.get_group_join_rel().related_model
@@ -300,7 +302,7 @@ class PermRootGroup(
         class_label = root_obj_class._meta.app_label + "." + root_obj_class.__name__
         return f"[{self.role}][{class_label}] {root_obj} [{root_obj.id}]"
 
-    def reset_permissions_for_group(self):
+    def reset_permissions_for_group(self, clear_existing=False):
         """
         Assign the correct permissions over the associated `PermRoot` to this
         object's Group, according to `self.ROLE_DEFINITIONS`.
@@ -312,7 +314,12 @@ class PermRootGroup(
 
         # Find the root object associated with thie object (PermRoot)
         root_field = self.get_root_field()
-        root_obj = getattr(self, root_field.name)
+        root_obj: PermRoot = getattr(self, root_field.name)
+
+        # Clear existing permissions if requested
+        if clear_existing:
+            clear_permissions_for_class(group=self.group, obj_class=root_obj.__class__)
+            # print("==== Cleared existing permissions ====")
 
         # Determine the new set of permission codenames based on ROLE_DEFINITIONS
         # e.g. {'app_label.add_model', 'app_label.change_model'}

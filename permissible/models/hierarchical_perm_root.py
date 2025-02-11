@@ -70,12 +70,17 @@ class HierarchicalPermRoot(PermRoot):
         `parent_id` as well as the NEW value of `parent_id`.
         """
 
+        model_class = type(self)
+
+        # Ensure children are not allowed to be their own parent
+        if self.pk and self.parent_id == self.pk:
+            raise ValueError("Cannot set parent to self")
+
         # Check if the parent has changed
         old_parent_id = None
         if self.pk:
             old_parent_id = (
-                type(self)
-                .objects.filter(pk=self.pk)
+                model_class.objects.filter(pk=self.pk)
                 .values_list("parent_id", flat=True)
                 .first()
             )
@@ -90,22 +95,24 @@ class HierarchicalPermRoot(PermRoot):
 
             # Get the ancestor IDs for both the old and new ancestor chains
             old_ancestor_ids = (
-                HierarchicalPermRoot.get_ancestor_ids_from_id(old_parent_id)
+                model_class.get_ancestor_ids_from_id(old_parent_id)
                 if old_parent_id
                 else set()
             )
             new_ancestor_ids = (
-                HierarchicalPermRoot.get_ancestor_ids_from_id(self.parent_id)
+                model_class.get_ancestor_ids_from_id(self.parent_id)
                 if self.parent_id
                 else set()
             )
 
-            # Compute the symmetric difference: only those ancestors that differ
-            diff_ids = old_ancestor_ids.symmetric_difference(new_ancestor_ids)
-            assert diff_ids
+            # Get all ancestors that are in the union of the old and new ancestor chains
+            # (because both old and new ancestor chains will have new CHILDREN)
+            all_ancestors = model_class.objects.filter(
+                pk__in=old_ancestor_ids.union(new_ancestor_ids)
+            )
 
-            # Update only the affected ancestors
-            for ancestor in self.__class__.objects.filter(pk__in=diff_ids):
+            # Update all affected ancestors
+            for ancestor in all_ancestors:
                 ancestor.reset_perm_groups()
 
         return result

@@ -10,12 +10,16 @@ from django.contrib.auth.models import PermissionsMixin
 
 class ShortPermsMixin(object):
     @classmethod
-    def get_permission_codename(cls, short_permission):
-        return f"{cls._meta.app_label}.{short_permission}_{cls._meta.model_name}"
+    def get_permission_codename(cls, short_permission, include_app_label=True):
+        app_label_prefix = f"{cls._meta.app_label}." if include_app_label else ""
+        return f"{app_label_prefix}{short_permission}_{cls._meta.model_name}"
 
     @classmethod
-    def get_permission_codenames(cls, short_permissions):
-        return [cls.get_permission_codename(sp) for sp in short_permissions]
+    def get_permission_codenames(cls, short_permissions, include_app_label=True):
+        return [
+            cls.get_permission_codename(sp, include_app_label)
+            for sp in short_permissions
+        ]
 
 
 class PermDef:
