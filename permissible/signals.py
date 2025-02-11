@@ -5,13 +5,20 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 
 from django.contrib.auth.models import Group
 from django.db import models
-from django.db.models.signals import m2m_changed, post_delete
-from django.dispatch import receiver
+from django.db.models.signals import m2m_changed
+from django.dispatch import receiver, Signal
 
 from .models import PermRootGroup
 
+perm_root_group_permissions_updated = Signal()
+permissions_cleared = Signal()
 
-@receiver(m2m_changed, sender=Group.user_set.through, dispatch_uid='neutron_post_group_membership_changed')
+
+@receiver(
+    m2m_changed,
+    sender=Group.user_set.through,
+    dispatch_uid="neutron_post_group_membership_changed",
+)
 def post_group_membership_changed(sender, action, instance, model, pk_set, **kwargs):
     """
     After a User is added or removed from a Group:
@@ -24,9 +31,12 @@ def post_group_membership_changed(sender, action, instance, model, pk_set, **kwa
         return
 
     # Get all the PermRootGroup models
-    root_group_fields = [field for field in Group._meta.get_fields()
-                         if isinstance(field, models.OneToOneRel)
-                         and issubclass(field.related_model, PermRootGroup)]
+    root_group_fields = [
+        field
+        for field in Group._meta.get_fields()
+        if isinstance(field, models.OneToOneRel)
+        and issubclass(field.related_model, PermRootGroup)
+    ]
     if not root_group_fields:
         return
 
@@ -34,7 +44,9 @@ def post_group_membership_changed(sender, action, instance, model, pk_set, **kwa
     # for this user, for all tables
     if action == "post_clear":
         for root_group_field in root_group_fields:
-            root_user_model_class = root_group_field.related_model.get_root_user_model_class()
+            root_user_model_class = (
+                root_group_field.related_model.get_root_user_model_class()
+            )
             qs = root_user_model_class.objects.filter(user=user)
             qs.hard_delete() if hasattr(qs, "hard_delete") else qs.delete()
         return
@@ -58,10 +70,7 @@ def post_group_membership_changed(sender, action, instance, model, pk_set, **kwa
 
         # Manage the individual PermRootUser record for this user and this PermRoot
         for root_id in root_ids:
-            root_user_kwargs = {
-                "user_id": user.id,
-                root_id_field_name: root_id
-            }
+            root_user_kwargs = {"user_id": user.id, root_id_field_name: root_id}
 
             # ADD:
             # If we just added Group(s), make sure the PermRootUser record exists
