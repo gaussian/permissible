@@ -3,7 +3,9 @@
 Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
-from typing import List, Union, Optional, Callable
+from typing import List, Type, Union, Optional, Callable
+
+from django.contrib.auth.models import PermissionsMixin
 
 
 class ShortPermsMixin(object):
@@ -21,17 +23,20 @@ class PermDef:
     A simple data structure to hold instructions for permissions configuration.
 
     Examples:
-        PermDef(["change"], obj_getter=PermissibleMixin.get_permissions_root_obj
         PermDef(["view"], obj_getter=lambda o, c: o.project.team)
         PermDef([], condition_checker=lambda o, u, c: o.is_public)
         PermDef(["view", "change"], condition_checker=lambda o, u: not o.is_public and u.is_superuser)
     """
 
     def __init__(
-            self,
-            short_perm_codes: Optional[List[str]],
-            obj_getter: Optional[Union[Callable[[object, object], ShortPermsMixin], str]] = None,
-            condition_checker: Optional[Union[Callable[[object, object, object], bool], str]] = None
+        self,
+        short_perm_codes: Optional[List[str]],
+        obj_getter: Optional[
+            Union[Callable[[object, object], Optional[ShortPermsMixin]], str]
+        ] = None,
+        condition_checker: Optional[
+            Union[Callable[[object, object, object], bool], str]
+        ] = None,
     ):
         """
         Initialize.
@@ -46,43 +51,76 @@ class PermDef:
         self.obj_getter = obj_getter
         self.condition_checker = condition_checker
 
-    def check_global(self, user, context=None):
+    def check_global(
+        self,
+        obj_class: Type[ShortPermsMixin],
+        user: PermissionsMixin,
+        context=None,
+    ):
         """
         Check global permissions
-        :return:
         """
-        return self._check(is_obj=False, obj=None, user=user, context=context)
+        return self._check(
+            must_check_obj=False,
+            obj=None,
+            obj_class=obj_class,
+            user=user,
+            context=context,
+        )
 
-    def check_obj(self, obj: ShortPermsMixin, user, context=None):
+    def check_obj(
+        self,
+        obj: ShortPermsMixin,
+        user: PermissionsMixin,
+        context=None,
+    ):
         """
         Check object permissions
-        :return:
         """
-        return self._check(is_obj=True, obj=obj, user=user, context=context)
+        return self._check(
+            must_check_obj=True,
+            obj=obj,
+            obj_class=obj.__class__,
+            user=user,
+            context=context,
+        )
 
-    def _check(self, is_obj: bool, obj: Optional[ShortPermsMixin], user, context=None):
-        """
-        """
+    def _check(
+        self,
+        must_check_obj: bool,
+        obj: Optional[ShortPermsMixin],
+        obj_class: Type[ShortPermsMixin],
+        user: PermissionsMixin,
+        context=None,
+    ):
+        """ """
         # Try to get the necessary object (if object-level permissions, fail if no obj found)
         obj = self.get_obj(obj=obj, context=context)
-        if is_obj and (not obj or not obj.pk):
+        if must_check_obj and (not obj or not obj.pk):
             return False
 
         # Check the "condition checker"
         obj_check_passes = self.check_condition(obj=obj, user=user, context=context)
 
-        # Check permissions
+        # No permissions to check - return True
         if self.short_perm_codes is None:
             has_perms = True
         else:
-            perms = obj.get_permission_codenames(self.short_perm_codes)
+            # Actually check permissions!
+            perms = obj_class.get_permission_codenames(self.short_perm_codes)
             has_perms = user.has_perms(perms, obj)
 
         # Both `has_perms` and `check_condition` must have passed
         if has_perms and obj_check_passes:
             return True
 
-    def get_obj(self, obj: ShortPermsMixin, context=None) -> ShortPermsMixin:
+        return False
+
+    def get_obj(
+        self,
+        obj: Optional[ShortPermsMixin],
+        context=None,
+    ) -> Optional[ShortPermsMixin]:
         """
         Using the provided object and context, return the actual object for which we will
         be checking permissions.
@@ -96,6 +134,7 @@ class PermDef:
 
             # Getter function is a string (member of object)...
             if isinstance(self.obj_getter, str):
+                assert obj, "Object must be provided to get object from"
                 return getattr(obj, self.obj_getter)(context)
 
             # ...or getter function is a lambda
@@ -129,5 +168,5 @@ class PermDef:
 ALLOW_ALL = None
 DENY_ALL = []
 
-IS_AUTHENTICATED = PermDef(None, condition_checker=lambda o, u, c: bool(u.id))
+IS_AUTHENTICATED = PermDef(None, condition_checker=lambda o, u, c: bool(u.pk))
 IS_PUBLIC = PermDef(None, condition_checker=lambda o, u, c: o.is_public)

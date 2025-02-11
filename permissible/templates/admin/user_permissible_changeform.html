@@ -1,0 +1,148 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrahead %}{{ block.super }}
+{{ form.media }}
+<style>
+    .role-cell {
+        cursor: pointer;
+        transition: background-color 0.2s;
+        border-left: 1px solid #eee;
+        border-right: 1px solid #eee;
+        border-collapse: collapse;
+        text-align: center;
+    }
+    .role-cell:hover {
+        background-color: #f5f5f5;
+    }
+</style>
+{% endblock %}
+
+{% load custom_tags %}
+
+{% block content %}
+<div id="content-main">
+    {% if form.errors %}
+        <p class="errornote">Please correct the error(s) below.</p>
+        {{ form.non_field_errors }}
+    {% endif %}
+
+    <form method="post" id="{{ opts.model_name }}_form" novalidate>
+        {% csrf_token %}
+
+        <div style="overflow-x: auto;">
+            <table style="margin-bottom: 30px">
+                <tr style="background-color: #eee">
+                    <th rowspan="2">{{ perm_root_name|capfirst }}s</th>
+                    <th colspan="{{ first_roles.keys|length|default:0 }}" style="text-align: center">Roles</th>
+                    <th rowspan="2">Resulting permissions this user has</th>
+                </tr>
+                <tr style="background-color: #eee">
+                    {% for role in first_roles.keys %}
+                        <th>{{ role }}</th>
+                    {% endfor %}
+                </tr>
+
+                {% for root, data in root_to_roles.items %}
+                    <tr>
+                        <td>
+                            {% admin_change_url root as change_url %}
+                            <a href="{% url change_url root.pk %}">
+                                {{ root }}
+                            </a>
+                        </td>
+                        {% for role, role_users in data.roles.items %}
+                            <td class="role-cell"
+                                data-root-id="{{ root.pk }}" 
+                                data-role="{{ role }}">
+                                <span class="checkmark">
+                                {% if user.pk|stringformat:"s" in role_users %}
+                                    ✔️
+                                {% endif %}
+                                </span>
+                            </td>
+                        {% endfor %}
+                        <td>
+                            {{ data.perms|join:", " }}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <fieldset class="module aligned">
+            {% for field in form %}
+                <div class="form-row" style="padding: 10px 0;">
+                    {{ field.label_tag }}
+                    {{ field }}
+                    {{ field.errors }}
+                </div>
+            {% endfor %}
+        </fieldset>
+
+        <input type="submit" value="Save Changes" name="_submit">
+    </form>
+</div>
+
+<script>
+// Track role changes that will be submitted with the form
+const roleChanges = {
+    added: {},    // {root_id: {role: true}}
+    removed: {}   // {root_id: {role: true}}
+};
+
+// Update the hidden form field with current role changes
+function updateRoleChanges() {
+    const jsonStr = JSON.stringify(roleChanges);
+    document.getElementById('id_role_changes').value = jsonStr;
+}
+
+// Add click handlers to all role cells
+document.querySelectorAll('.role-cell').forEach(cell => {
+    cell.addEventListener('click', function() {
+        // Get metadata about this cell
+        const rootId = this.dataset.rootId;
+        const role = this.dataset.role;
+        const checkmark = this.querySelector('.checkmark');
+        
+        // Determine current state
+        const hasCheck = checkmark.textContent.includes('✔️');  // Existing role
+        const wasAdded = checkmark.textContent.includes('🔵');  // Pending addition
+        const wasRemoved = checkmark.textContent.includes('❌'); // Pending removal
+        
+        // Initialize role tracking for this root if needed
+        if (!roleChanges.added[rootId]) roleChanges.added[rootId] = {};
+        if (!roleChanges.removed[rootId]) roleChanges.removed[rootId] = {};
+        
+        // State machine for role changes:
+        // ✔️ (exists) -> ❌ (will remove)
+        // ❌ (will remove) -> ✔️ (cancel remove)
+        // 🔵 (will add) -> empty (cancel add)
+        // empty -> 🔵 (will add)
+        if (hasCheck) {
+            checkmark.textContent = '❌';
+            roleChanges.removed[rootId][role] = true;
+        } else if (wasRemoved) {
+            checkmark.textContent = '✔️';
+            delete roleChanges.removed[rootId][role];
+        } else if (wasAdded) {
+            checkmark.textContent = '';
+            delete roleChanges.added[rootId][role];
+        } else {
+            checkmark.textContent = '🔵';
+            roleChanges.added[rootId][role] = true;
+        }
+        
+        // Clean up empty entries to keep the JSON clean
+        if (Object.keys(roleChanges.added[rootId] || {}).length === 0) {
+            delete roleChanges.added[rootId];
+        }
+        if (Object.keys(roleChanges.removed[rootId] || {}).length === 0) {
+            delete roleChanges.removed[rootId];
+        }
+        
+        // Update the form field
+        updateRoleChanges();
+    });
+});
+</script>
+{% endblock %}
