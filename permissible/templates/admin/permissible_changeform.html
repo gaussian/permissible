@@ -36,11 +36,11 @@
         <table style="margin-bottom: 30px">
             <tr style="background-color: #eee">
                 <th rowspan="2">Users</th>
-                <th colspan="{{ role_to_users.keys|length }}" style="text-align: center">Roles</th>
+                <th colspan="{{ role_to_user_id.keys|length }}" style="text-align: center">Roles</th>
                 <th rowspan="2">Resulting permissions on this {{ opts.model_name }}</th>
             </tr>
             <tr style="background-color: #eee">
-                {% for role in role_to_users.keys %}
+                {% for role in role_to_user_id.keys %}
                 <th>{{ role }}</th>
                 {% endfor %}
             </tr>
@@ -48,9 +48,12 @@
             {% for user in users_to_perms.keys %}
                 <tr>
                     <td>
-                        {{ user }} ({{ user.email }})
+                        {% admin_change_url user as change_url %}
+                        <a href="{% url change_url user.pk %}">
+                            {{ user }} ({{ user.email }})
+                        </a>
                     </td>
-                    {% for role, role_users in role_to_users.items %}
+                    {% for role, role_users in role_to_user_id.items %}
                         <td class="role-cell"
                             data-user-id="{{ user.pk }}" data-role="{{ role }}">
                         {% with user_id=user.pk|stringformat:"s" %}
