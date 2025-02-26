@@ -7,12 +7,12 @@ from __future__ import annotations
 
 from django.db import models
 
-from .perm_root import PermRoot
+from .perm_root import PermDomain
 
 
-class HierarchicalPermRoot(PermRoot):
+class HierarchicalPermDomain(PermDomain):
     """
-    HierarchicalPermRoot extends PermRoot by adding a parent/children relationship,
+    HierarchicalPermDomain extends PermDomain by adding a parent/children relationship,
     and propagating permissions to all parents/ancestors.
     """
 
@@ -29,7 +29,7 @@ class HierarchicalPermRoot(PermRoot):
 
     def get_permission_targets(self):
         """
-        Return an iterable (or generator) of PermRoot objects for which
+        Return an iterable (or generator) of PermDomain objects for which
         permissions should be set based on this instance.
         In this case, as opposed to the base class, we need to include
         all DESCENDANTS in the set of permission targets.

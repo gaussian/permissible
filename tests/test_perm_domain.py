@@ -7,22 +7,22 @@ from django.contrib.auth.models import Group
 from django.db import models
 
 # Import the abstract models to be tested.
-from permissible.models.perm_root import PermRoot, PermRootGroup, PermRootUser
+from permissible.models.perm_root import PermDomain, PermRole, PermDomainMember
 
 #
 # Dummy concrete models for testing
 #
 
 
-class DummyRoot(PermRoot):
+class DummyRoot(PermDomain):
     """
-    A concrete PermRoot. It defines:
+    A concrete PermDomain. It defines:
       - a name field,
       - a ManyToManyField to Group via DummyRootGroup,
       - a ManyToManyField to the User model via DummyRootUser.
 
     Also, we add a get_permission_codenames classmethod so that
-    PermRootGroup.reset_permissions_for_group can work.
+    PermRole.reset_permissions_for_group can work.
     """
 
     name = models.CharField(max_length=100)
@@ -43,10 +43,10 @@ class DummyRoot(PermRoot):
         return {f"dummy_{code}" for code in short_perm_codes}
 
 
-class DummyRootGroup(PermRootGroup):
+class DummyRootGroup(PermRole):
     """
-    A concrete PermRootGroup. Note that the join field must match the
-    PermRoot’s model name (i.e. "dummyroot").
+    A concrete PermRole. Note that the join field must match the
+    PermDomain’s model name (i.e. "dummyroot").
     """
 
     dummyroot = models.ForeignKey(DummyRoot, on_delete=models.CASCADE)
@@ -58,9 +58,9 @@ class DummyRootGroup(PermRootGroup):
         abstract = False
 
 
-class DummyRootUser(PermRootUser):
+class DummyRootUser(PermDomainMember):
     """
-    A concrete PermRootUser. It joins DummyRoot to a User.
+    A concrete PermDomainMember. It joins DummyRoot to a User.
     """
 
     dummyroot = models.ForeignKey(DummyRoot, on_delete=models.CASCADE)
@@ -75,7 +75,7 @@ class DummyRootUser(PermRootUser):
 
 
 #
-# Tests for PermRoot, PermRootGroup, and PermRootUser
+# Tests for PermDomain, PermRole, and PermDomainMember
 #
 
 
@@ -141,7 +141,7 @@ class PermRootTests(TestCase):
         for gid in expected_ids:
             self.assertNotIn(gid, user_group_ids_after)
 
-    def test_permrootuser_get_permissions_root_obj(self):
+    def test_permdomainuser_get_permissions_root_obj(self):
         """
         Verify that DummyRootUser.get_permissions_root_obj returns the value
         from get_unretrieved (i.e. the user's id).
@@ -180,7 +180,7 @@ class PermRootTests(TestCase):
         join_obj.delete()
         self.assertIsNone(root.get_member_group_id())
 
-    def test_permrootgroup_str(self):
+    def test_permdomaingroup_str(self):
         """
         Test the __str__ output of a DummyRootGroup instance.
         """
@@ -215,7 +215,7 @@ class PermRootTests(TestCase):
 
     def test_get_root_obj(self):
         """
-        Test the static method get_root_obj on PermRootGroup.
+        Test the static method get_root_obj on PermRole.
         Given a group_id from one of DummyRootGroup’s, it should return the corresponding DummyRoot.
         """
         root = DummyRoot.objects.create(name="Test Root 9")
@@ -230,7 +230,7 @@ class PermRootTests(TestCase):
             "get_root_obj did not return the correct root instance.",
         )
 
-    def test_permrootuser_str(self):
+    def test_permdomainuser_str(self):
         """
         Test that the __str__ method of DummyRootUser returns a string containing both the root and user.
         """
@@ -258,7 +258,7 @@ class PermRootTests(TestCase):
         """
         self.assertIsNone(DummyRootGroup.get_root_obj(-1))
 
-    def test_permrootuser_perm_def_self_condition(self):
+    def test_permdomainuser_perm_def_self_condition(self):
         """
         Test that the perm_def_self condition for DummyRootUser passes when the user matches
         and fails when it does not.

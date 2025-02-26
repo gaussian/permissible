@@ -9,7 +9,7 @@ from .permissible_mixin import PermissibleMixin
 from .metaclasses import AbstractModelMetaclass, ExtraPermModelMetaclass
 
 
-class PermRootModelMetaclass(ExtraPermModelMetaclass, AbstractModelMetaclass):
+class PermDomainModelMetaclass(ExtraPermModelMetaclass, AbstractModelMetaclass):
     permission_definitions = (
         ("add_on_{}", "Can add related records onto {}"),
         ("change_on_{}", "Can change related records on {}"),
@@ -17,12 +17,15 @@ class PermRootModelMetaclass(ExtraPermModelMetaclass, AbstractModelMetaclass):
     )
 
 
-class BasePermRoot(PermissibleMixin, models.Model, metaclass=PermRootModelMetaclass):
+class BasePermDomain(
+    PermissibleMixin, models.Model, metaclass=PermDomainModelMetaclass
+):
     """
     A model that acts as the root for a permission hierarchy. This model is primarily
-    used as a base class for PermRoot (which has considerable functionality), but
+    used as a base class for PermDomain (which has considerable functionality), but
     can also be used directly as a way to add root object permissions without
-    the associated PermRootGroup and PermRootUser models and functionality.
+    the associated PermRole and PermDomainMember models and functionality.
     """
+
     class Meta:
         abstract = True

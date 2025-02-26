@@ -6,11 +6,11 @@ from django.test import TestCase
 from django.contrib.auth.models import Group
 from django.contrib.auth import get_user_model
 
-from permissible.models.hierarchical_perm_root import HierarchicalPermRoot
+from permissible.models.hierarchical_perm_root import HierarchicalPermDomain
 
 
-# Define a dummy concrete model for HierarchicalPermRoot
-class DummyHierarchicalRoot(HierarchicalPermRoot):
+# Define a dummy concrete model for HierarchicalPermDomain
+class DummyHierarchicalRoot(HierarchicalPermDomain):
     name = models.CharField(max_length=100)
     parent = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.CASCADE, related_name="children"
@@ -29,7 +29,7 @@ class DummyHierarchicalRoot(HierarchicalPermRoot):
         app_label = "permissible"  # Ensure proper app_label for testing
 
 
-class HierarchicalPermRootTests(TestCase):
+class HierarchicalPermDomainTests(TestCase):
 
     def setUp(self):
         # Create a simple hierarchy:
@@ -91,7 +91,7 @@ class HierarchicalPermRootTests(TestCase):
     @patch.object(DummyHierarchicalRoot, "reset_perm_groups")
     def test_save_parent_changed_calls_reset_on_ancestors(self, mock_reset):
         """
-        Test that when a HierarchicalPermRoot instance has its parent changed,
+        Test that when a HierarchicalPermDomain instance has its parent changed,
         reset_perm_groups is called on ancestors that differ.
         """
         # Initially, child1.parent is root.
