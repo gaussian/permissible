@@ -174,7 +174,7 @@ class PermDomain(BasePermDomain):
         return None
 
 
-class PermDomainFieldModelMixin(object):
+class PermDomainFieldMixin(object):
     @classmethod
     def get_domain_field(cls) -> models.ForeignKey[PermDomain]:
         """
@@ -211,7 +211,7 @@ def build_role_field(role_definitions):
 
 
 class PermDomainRole(
-    PermDomainFieldModelMixin,
+    PermDomainFieldMixin,
     models.Model,
     metaclass=AbstractModelMetaclass,
 ):
@@ -373,7 +373,7 @@ class PermDomainRole(
 
 
 class PermDomainMember(
-    PermDomainFieldModelMixin,
+    PermDomainFieldMixin,
     PermissibleMixin,
     models.Model,
     metaclass=AbstractModelMetaclass,

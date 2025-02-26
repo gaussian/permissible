@@ -6,7 +6,7 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 from django.db import models
 
 from ..permissible_mixin import PermissibleMixin
-from .metaclasses import AbstractModelMetaclass, ExtraPermModelMetaclass
+from ..metaclasses import AbstractModelMetaclass, ExtraPermModelMetaclass
 
 
 class PermDomainModelMetaclass(ExtraPermModelMetaclass, AbstractModelMetaclass):

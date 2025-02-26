@@ -3,10 +3,11 @@ from .role_based.core import (
     PermDomain,
     PermDomainMember,
     build_role_field,
-    PermDomainFieldModelMixin,
+    PermDomainFieldMixin,
 )
 from .role_based.hierarchical import HierarchicalPermDomain
 from .role_based.base import BasePermDomain, PermDomainModelMetaclass
+from .metaclasses import AbstractModelMetaclass, ExtraPermModelMetaclass
 from .permissible_mixin import PermissibleMixin
 from .mixins import (
     PermissibleRejectGlobalPermissionsMixin,
