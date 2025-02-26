@@ -116,53 +116,17 @@ jobs:
           git push
           git tag v${{ steps.versioning.outputs.newVersion }}
           git push origin v${{ steps.versioning.outputs.newVersion }}
-
-      - name: Generate Release Notes
-        id: release_notes
-        run: |
-          # Get the previous tag
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          
-          if [ -z "$PREVIOUS_TAG" ]; then
-              # If no previous tag, use initial commit
-              echo "No previous tag found, listing all changes"
-              CHANGES=$(git log --pretty=format:"* %s (%an)" --reverse)
-          else
-              echo "Generating changes between $PREVIOUS_TAG and HEAD"
-              CHANGES=$(git log --pretty=format:"* %s (%an)" --reverse $PREVIOUS_TAG..HEAD)
-          fi
-          
-          # Extract PR information
-          PR_INFO=$(git log --merges --pretty=format:"* PR #%s: %b" --grep="Merge pull request" $PREVIOUS_TAG..HEAD | grep -oP "PR #\d+: .*" || echo "")
-          
-          # Create release notes with markdown
-          RELEASE_NOTES="## What's Changed in v${{ steps.versioning.outputs.newVersion }}
-
-          ${PR_INFO:-No PRs found in this release.}
-
-          ### All Commits
-          $CHANGES
-          
-          "
-          
-          # Escape newlines and other special chars for GitHub Actions
-          RELEASE_NOTES="${RELEASE_NOTES//'%'/'%25'}"
-          RELEASE_NOTES="${RELEASE_NOTES//$'\n'/'%0A'}"
-          RELEASE_NOTES="${RELEASE_NOTES//$'\r'/'%0D'}"
-          
-          echo "releaseNotes=$RELEASE_NOTES" >> $GITHUB_OUTPUT
   
       - name: Create GitHub Release
         id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.versioning.outputs.newVersion }}
-          release_name: v${{ steps.versioning.outputs.newVersion }}
-          body: ${{ steps.release_notes.outputs.releaseNotes }}
+          name: v${{ steps.versioning.outputs.newVersion }}
           draft: false
           prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+          generate_release_notes: true
 
       - name: Checkout the merged development branch
         uses: actions/checkout@v4
