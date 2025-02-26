@@ -6,7 +6,7 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 from django.db import models
 
 from ..permissible_mixin import PermissibleMixin
-from ..metaclasses import AbstractModelMetaclass, ExtraPermModelMetaclass
+from .metaclasses import AbstractModelMetaclass, ExtraPermModelMetaclass
 
 
 class PermDomainModelMetaclass(ExtraPermModelMetaclass, AbstractModelMetaclass):
@@ -21,10 +21,10 @@ class BasePermDomain(
     PermissibleMixin, models.Model, metaclass=PermDomainModelMetaclass
 ):
     """
-    A model that acts as the root for a permission hierarchy. This model is primarily
+    A model that acts as the domain for a permission hierarchy. This model is primarily
     used as a base class for PermDomain (which has considerable functionality), but
-    can also be used directly as a way to add root object permissions without
-    the associated PermRole and PermDomainMember models and functionality.
+    can also be used directly as a way to add domain object permissions without
+    the associated PermDomainRole and PermDomainMember models and functionality.
     """
 
     class Meta:

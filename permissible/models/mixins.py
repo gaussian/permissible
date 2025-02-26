@@ -22,7 +22,7 @@ class PermissibleDenyPerms(PermissibleCreateIfAuthPerms):
 
     Note that no global checks are done.
     Note that no "list" permission checks are done (permissions checks should
-    instead be done on the root object, in the "list" action, via
+    instead be done on the actual object, in the "list" action, via
     `permissible.PermissibleRootFilter`).
     """
 

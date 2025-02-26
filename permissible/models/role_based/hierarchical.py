@@ -113,6 +113,6 @@ class HierarchicalPermDomain(PermDomain):
 
             # Update all affected ancestors
             for ancestor in all_ancestors:
-                ancestor.reset_perm_groups()
+                ancestor.reset_domain_roles()
 
         return result

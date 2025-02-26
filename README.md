@@ -76,20 +76,20 @@ Each resulting `Group` (managed on the backend) corresponds to a single role.
 
 To accomplish this, `permissible` provides 3 base model classes that you should use:
 1. **`PermDomain`**: Make the domain model (e.g. `Team`) derive from `PermDomain`
-2. **`PermRole`**: Create a new model that derives from `PermRole`
+2. **`PermDomainRole`**: Create a new model that derives from `PermDomainRole`
 and has a `ForeignKey` to the domain model - and defines `ROLE_DEFINITIONS`
 3. **`PermDomainMember`**: Create a new model that derives from `PermDomainMember`
 and has a `ForeignKey` to the domain model (this model automatically adds and
-removes records when a user is a member of the appropriate `PermRole`)
+removes records when a user is a member of the appropriate `PermDomainRole`)
 
 You can then simply adjust your permissions maps in `PermissibleMixin` to
 incorporate checking of the domain model for permissions. See the documentation for
 `PermDef` and `PermissibleMixin.has_object_permissions` for info and examples.
 
 Remember: `PermDomain` is the core model on which roles are defined (eg Project or
-Team) and `PermRole` is the model that represents a single role (and
+Team) and `PermDomainRole` is the model that represents a single role (and
 therefore a single Django `auth.Group`) for a single `PermDomain` - eg Team Admins.
-The `PermRole.ROLE_DEFINITIONS` defines what object permissions will be
+The `PermDomainRole.ROLE_DEFINITIONS` defines what object permissions will be
 given to each role/group for every `PermDomain`.
 
 You can also use `PermDomainAdminMixin` to help you manage the `PermDomain` records
@@ -153,7 +153,7 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
     - `User` (inherits Django's base abstract user model)
     - `Group` (Django's model)
     - `Team` (inherits `PermDomain`)
-    - `TeamGroup` (inherits `PermRole`)
+    - `TeamGroup` (inherits `PermDomainRole`)
     - `TeamUser` (inherits `PermDomainMember`)
     - `TeamInfo` (contains a foreign key to `Team`)
    
@@ -164,7 +164,7 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
     (e.g. member, owner)
     - For each `TeamGroup`, the `save()` method triggers the creation of a new `Group`,
     and assigns permissions to each of these groups, in accordance with
-    `PermRole.role_definitions`:
+    `PermDomainRole.role_definitions`:
         - `TeamGroup` with "Member" role is given no permissions
         - `TeamGroup` with "Viewer" role is given "view_team" permission
         - `TeamGroup` with "Contributor" role is given "contribute_to_team" and "view_team"

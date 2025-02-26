@@ -7,16 +7,16 @@ from __future__ import annotations
 
 from collections import defaultdict
 from itertools import chain
-from typing import TYPE_CHECKING, Dict, List, Literal, Type, Union, Optional
+from typing import TYPE_CHECKING, List, Literal, Type, Optional
 
 from django.contrib.auth.models import PermissionsMixin
 
 
-from .unretrieved_model_mixin import UnRetrievedModelMixin
+from .unretrieved_model_mixin import UnretrievedModelMixin
 from permissible.perm_def import ShortPermsMixin, PermDef
 
 
-class PermissibleMixin(ShortPermsMixin, UnRetrievedModelMixin):
+class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
     """
     Model mixin that allows a model to check permissions, in accordance with
     simple dictionaries (`global_action_perm_map` and `obj_action_perm_map`)

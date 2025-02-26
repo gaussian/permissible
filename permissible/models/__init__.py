@@ -1,5 +1,5 @@
 from .role_based.core import (
-    PermRole,
+    PermDomainRole,
     PermDomain,
     PermDomainMember,
     build_role_field,
@@ -17,4 +17,4 @@ from .mixins import (
     PermissibleDenyPerms,
 )
 
-# from .tests import TestPermissibleFromSelf, TestPermDomain, TestPermRole, TestPermDomainMember, TestPermissibleFromRoot
+# from .tests import TestPermissibleFromSelf, TestPermDomain, TestPermDomainRole, TestPermDomainMember, TestPermissibleFromRoot

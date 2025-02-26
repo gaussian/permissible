@@ -8,7 +8,7 @@ from django.db import models
 
 from ..models import (
     PermDomain,
-    PermRole,
+    PermDomainRole,
     PermDomainMember,
     PermissibleMixin,
     PermissibleDefaultPerms,
@@ -17,25 +17,25 @@ from ..models import (
 
 
 class TestPermDomain(PermDomain, models.Model):
-    groups = models.ManyToManyField("auth.Group", through="TestPermRole")
+    groups = models.ManyToManyField("auth.Group", through="TestPermDomainRole")
     users = models.ManyToManyField(
         settings.AUTH_USER_MODEL, through="TestPermDomainMember"
     )
 
     class Meta:
         permissions = (
-            ("add_on_testpermissiblefromroot", "Can add objects on this"),
-            ("change_on_testpermissiblefromroot", "Can change objects on this"),
+            ("add_on_testpermissiblefromdomain", "Can add objects on this"),
+            ("change_on_testpermissiblefromdomain", "Can change objects on this"),
         )
         app_label = "permissible"
 
 
-class TestPermRole(PermRole, models.Model):
-    root = models.ForeignKey("permissible.TestPermDomain", on_delete=models.CASCADE)
+class TestPermDomainRole(PermDomainRole, models.Model):
+    domain = models.ForeignKey("permissible.TestPermDomain", on_delete=models.CASCADE)
 
 
 class TestPermDomainMember(PermDomainMember, models.Model):
-    root = models.ForeignKey(TestPermDomain, on_delete=models.CASCADE)
+    domain = models.ForeignKey(TestPermDomain, on_delete=models.CASCADE)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
 
 
@@ -47,10 +47,10 @@ class TestPermissibleFromSelf(PermissibleDefaultPerms, PermissibleMixin, models.
         )
 
 
-class TestPermissibleFromRoot(
+class TestPermissibleFromDomain(
     PermissibleDefaultChildPerms, PermissibleMixin, models.Model
 ):
-    root = models.ForeignKey("TestPermDomain", on_delete=models.CASCADE)
+    domain = models.ForeignKey("TestPermDomain", on_delete=models.CASCADE)
 
     def get_root_perm_object(self, context=None) -> object:
-        return self.root
+        return self.domain

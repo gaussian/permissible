@@ -45,8 +45,8 @@ class PermDef:
         """
         Initialize.
         :param short_perm_codes: A list of short permission codes, e.g. ["view", "change"]
-        :param obj_getter: A function/str that takes an initial object and returns its root
-        object, e.g. a "survey" might be the root of "survey question" objects
+        :param obj_getter: A function/str that takes an initial object and returns the obj to check
+        object, e.g. a "survey" might be the object to check for "survey question" objects
         :param condition_checker: A function/str that takes an object, the user, and additional
         context, and returns a boolean, which is AND'd with the result of user.has_perms to
         return whether permission is successful
@@ -129,9 +129,9 @@ class PermDef:
         Using the provided object and context, return the actual object for which we will
         be checking permissions.
 
-        :param obj: Initial object, from which to find root object
+        :param obj: Initial object, from which to find the object to check perms on
         :param context: Context dictionary for additional context
-        :return: Object (root object) for which permissions will be checked
+        :return: Object for which permissions will be checked
         """
         # Getter function is set - use it
         if self.obj_getter:
@@ -152,7 +152,7 @@ class PermDef:
         Using the provided object, context, and user, perform the condition check
         for this `PermDef`, if one was provided.
 
-        :param obj: Initial object, from which to find root object
+        :param obj: Initial object, from which to find the object to check perms on
         :param user: Authenticating user
         :param context: Context dictionary for additional context
         :return: Did check pass?

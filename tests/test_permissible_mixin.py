@@ -34,10 +34,6 @@ class TestPermissibleDenyPerms(unittest.TestCase):
         self.superuser = DummyUser(id=1, is_superuser=True)
         self.instance = DummyDenyDefaultModel()
 
-    def test_get_permissions_root_obj(self):
-        # get_permissions_root_obj should return None as defined in PermissibleDenyPerms.
-        self.assertIsNone(self.instance.get_permissions_root_obj())
-
     def test_has_object_permission_denies_actions_for_normal_user(self):
         # For actions mapped to DENY_ALL, has_object_permission should return False for normal user.
         actions = ["create", "retrieve", "update", "partial_update", "destroy"]

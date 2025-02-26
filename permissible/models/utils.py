@@ -16,7 +16,7 @@ def update_permissions_for_object(
     compute the expected permission codenames and assign (or remove) them as needed.
     """
     from guardian.shortcuts import assign_perm, remove_perm, get_group_perms
-    from permissible.signals import perm_domain_group_permissions_updated
+    from permissible.signals import perm_domain_role_permissions_updated
 
     # Compute expected permissions using the object's class method
     expected_perms = set(
@@ -47,7 +47,7 @@ def update_permissions_for_object(
         remove_perm(perm, group, obj)
 
     # Send signal (for logging, cache invalidation, etc)
-    perm_domain_group_permissions_updated.send(
+    perm_domain_role_permissions_updated.send(
         sender=obj.__class__,
         obj=obj,
         group=group,

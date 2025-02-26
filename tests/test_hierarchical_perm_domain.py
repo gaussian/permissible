@@ -10,16 +10,16 @@ from permissible.models import HierarchicalPermDomain
 
 
 # Define a dummy concrete model for HierarchicalPermDomain
-class DummyHierarchicalRoot(HierarchicalPermDomain):
+class DummyHierarchicalDomain(HierarchicalPermDomain):
     name = models.CharField(max_length=100)
     parent = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.CASCADE, related_name="children"
     )
     groups = models.ManyToManyField(
-        Group, related_name="dummy_hierarchical_roots", blank=True
+        Group, related_name="dummy_hierarchical_domains", blank=True
     )
     users = models.ManyToManyField(
-        get_user_model(), related_name="dummy_hierarchical_roots", blank=True
+        get_user_model(), related_name="dummy_hierarchical_domains", blank=True
     )
 
     def __str__(self):
@@ -38,14 +38,14 @@ class HierarchicalPermDomainTests(TestCase):
         #        Child1
         #          /  \
         #    Child2   Child3
-        self.root = DummyHierarchicalRoot.objects.create(name="Root")
-        self.child1 = DummyHierarchicalRoot.objects.create(
-            name="Child1", parent=self.root
+        self.domain = DummyHierarchicalDomain.objects.create(name="Root")
+        self.child1 = DummyHierarchicalDomain.objects.create(
+            name="Child1", parent=self.domain
         )
-        self.child2 = DummyHierarchicalRoot.objects.create(
+        self.child2 = DummyHierarchicalDomain.objects.create(
             name="Child2", parent=self.child1
         )
-        self.child3 = DummyHierarchicalRoot.objects.create(
+        self.child3 = DummyHierarchicalDomain.objects.create(
             name="Child3", parent=self.child1
         )
 
@@ -53,7 +53,7 @@ class HierarchicalPermDomainTests(TestCase):
         """
         Test that get_permission_targets returns self and all descendants recursively.
         """
-        targets = list(self.root.get_permission_targets())
+        targets = list(self.domain.get_permission_targets())
         target_names = {t.name for t in targets}
         expected_names = {"Root", "Child1", "Child2", "Child3"}
         self.assertEqual(target_names, expected_names)
@@ -71,36 +71,36 @@ class HierarchicalPermDomainTests(TestCase):
         """
         Test that get_ancestor_ids_from_id returns the correct set of ancestor IDs.
         """
-        # For child2, ancestors are child1 and root (order doesn't matter).
-        ancestor_ids = DummyHierarchicalRoot.get_ancestor_ids_from_id(self.child1.pk)
+        # For child2, ancestors are child1 and domain (order doesn't matter).
+        ancestor_ids = DummyHierarchicalDomain.get_ancestor_ids_from_id(self.child1.pk)
         self.assertIn(self.child1.pk, ancestor_ids)
         # For child2, get ancestors via parent chain.
-        ancestor_ids_child2 = DummyHierarchicalRoot.get_ancestor_ids_from_id(
+        ancestor_ids_child2 = DummyHierarchicalDomain.get_ancestor_ids_from_id(
             self.child2.parent.pk
         )
-        expected = {self.child1.pk, self.root.pk}
+        expected = {self.child1.pk, self.domain.pk}
         self.assertEqual(ancestor_ids_child2, expected)
 
     def test_get_ancestor_ids_from_none(self):
         """
         Test that get_ancestor_ids_from_id returns an empty set for a None parent_id.
         """
-        ancestor_ids = DummyHierarchicalRoot.get_ancestor_ids_from_id(None)
+        ancestor_ids = DummyHierarchicalDomain.get_ancestor_ids_from_id(None)
         self.assertEqual(ancestor_ids, set())
 
-    @patch.object(DummyHierarchicalRoot, "reset_perm_groups")
+    @patch.object(DummyHierarchicalDomain, "reset_domain_roles")
     def test_save_parent_changed_calls_reset_on_ancestors(self, mock_reset):
         """
         Test that when a HierarchicalPermDomain instance has its parent changed,
-        reset_perm_groups is called on ancestors that differ.
+        reset_domain_roles is called on ancestors that differ.
         """
-        # Initially, child1.parent is root.
+        # Initially, child1.parent is domain.
         # Change child1's parent to None.
         self.child1.parent = None
         self.child1.save()
 
-        # The reset_perm_groups on affected ancestors should have been called.
-        # We expect at least one call: on the old ancestor (root) or on child1 itself.
+        # The reset_domain_roles on affected ancestors should have been called.
+        # We expect at least one call: on the old ancestor (domain) or on child1 itself.
         self.assertTrue(mock_reset.called)
 
     def test_save_no_parent_change_does_not_call_reset(self):
@@ -108,7 +108,7 @@ class HierarchicalPermDomainTests(TestCase):
         Test that saving an instance without changing its parent does not trigger ancestor resets.
         """
         # Save child1 without changing the parent.
-        with patch.object(DummyHierarchicalRoot, "reset_perm_groups") as mock_reset:
+        with patch.object(DummyHierarchicalDomain, "reset_domain_roles") as mock_reset:
             self.child1.name = "Child1 Updated"
             self.child1.save()
             mock_reset.assert_not_called()
