@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from django.db import models
 
-from .perm_root import PermDomain
+from .core import PermDomain
 
 
 class HierarchicalPermDomain(PermDomain):

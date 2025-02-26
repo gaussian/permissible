@@ -7,18 +7,20 @@ from django.conf import settings
 from django.db import models
 
 from ..models import (
-    PermRoot,
-    PermRootGroup,
-    PermRootUser,
+    PermDomain,
+    PermRole,
+    PermDomainMember,
     PermissibleMixin,
     PermissibleDefaultPerms,
     PermissibleDefaultChildPerms,
 )
 
 
-class TestPermRoot(PermRoot, models.Model):
-    groups = models.ManyToManyField("auth.Group", through="TestPermRootGroup")
-    users = models.ManyToManyField(settings.AUTH_USER_MODEL, through="TestPermRootUser")
+class TestPermDomain(PermDomain, models.Model):
+    groups = models.ManyToManyField("auth.Group", through="TestPermRole")
+    users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, through="TestPermDomainMember"
+    )
 
     class Meta:
         permissions = (
@@ -28,12 +30,12 @@ class TestPermRoot(PermRoot, models.Model):
         app_label = "permissible"
 
 
-class TestPermRootGroup(PermRootGroup, models.Model):
-    root = models.ForeignKey("permissible.TestPermRoot", on_delete=models.CASCADE)
+class TestPermRole(PermRole, models.Model):
+    root = models.ForeignKey("permissible.TestPermDomain", on_delete=models.CASCADE)
 
 
-class TestPermRootUser(PermRootUser, models.Model):
-    root = models.ForeignKey(TestPermRoot, on_delete=models.CASCADE)
+class TestPermDomainMember(PermDomainMember, models.Model):
+    root = models.ForeignKey(TestPermDomain, on_delete=models.CASCADE)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
 
 
@@ -48,7 +50,7 @@ class TestPermissibleFromSelf(PermissibleDefaultPerms, PermissibleMixin, models.
 class TestPermissibleFromRoot(
     PermissibleDefaultChildPerms, PermissibleMixin, models.Model
 ):
-    root = models.ForeignKey("TestPermRoot", on_delete=models.CASCADE)
+    root = models.ForeignKey("TestPermDomain", on_delete=models.CASCADE)
 
     def get_root_perm_object(self, context=None) -> object:
         return self.root

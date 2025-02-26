@@ -19,6 +19,7 @@ class PermissibleObjectAssignMixin(ObjectPermissionsAssignmentMixin):
     NOTE: no add permission is created for this object, as that doesn't make
           sense either.
     """
+
     def get_permissions_map(self, created) -> Dict[str, Iterable]:
         """
         Return a map where keys are permissions and values are list of users
@@ -30,15 +31,18 @@ class PermissibleObjectAssignMixin(ObjectPermissionsAssignmentMixin):
 
         model_class = self.instance.__class__
         django_short_perm_codes = ["view", "change", "delete"]
-        permissions = [model_class.get_permission_codename(pc) for pc in django_short_perm_codes]
+        permissions = [
+            model_class.get_permission_codename(pc) for pc in django_short_perm_codes
+        ]
         extra_perms = [perm for perm, _ in model_class._meta.permissions]
-        return {perm: [self.context["request"].user]
-                for perm in permissions + extra_perms}
+        return {
+            perm: [self.context["request"].user] for perm in permissions + extra_perms
+        }
 
 
-class PermissibleRootObjectAssignMixin(Serializer):
+class PermDomainObjectAssignMixin(Serializer):
     """
-    A serializer mixin to add the user who creates a `PermRoot` object to
+    A serializer mixin to add the user who creates a `PermDomain` object to
     all the associated groups.
 
     NOTE: no permissions are assigned - user is simply added to groups

@@ -3,7 +3,7 @@ Django admin customization for the permissible module.
 Provides mixins for managing object-level permissions through
 the Django admin interface. The main components are:
 
-- PermRootAdminMixin: Adds permission management to PermRoot model admins
+- PermDomainAdminMixin: Adds permission management to PermDomain model admins
 
 This module does not require django-guardian for object-level permissions, but
 does benefit from it.

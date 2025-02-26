@@ -260,10 +260,9 @@ class PermissibleMixin(ShortPermsMixin, UnRetrievedModelMixin):
         and return it if it exists.
 
         Note that sometimes, get_root_perm_object() returns a User,
-        which is NOT a PermRoot object.
+        which is NOT a PermDomain object.
         """
         try:
-            # from .perm_root import PermRoot
             data_as_obj = cls.make_objs_from_data(data)[0]
             root_obj = data_as_obj.get_root_perm_object()
             return root_obj

@@ -1,12 +1,12 @@
-from .perm_root import (
-    PermRootGroup,
-    PermRoot,
-    PermRootUser,
+from .role_based.core import (
+    PermRole,
+    PermDomain,
+    PermDomainMember,
     build_role_field,
-    PermRootFieldModelMixin,
+    PermDomainFieldModelMixin,
 )
-from .hierarchical_perm_root import HierarchicalPermRoot
-from .base_perm_root import BasePermRoot, PermRootModelMetaclass
+from .role_based.hierarchical import HierarchicalPermDomain
+from .role_based.base_perm_domain import BasePermDomain, PermDomainModelMetaclass
 from .permissible_mixin import PermissibleMixin
 from .mixins import (
     PermissibleRejectGlobalPermissionsMixin,
@@ -17,4 +17,4 @@ from .mixins import (
     PermissibleDenyPerms,
 )
 
-# from .tests import TestPermissibleFromSelf, TestPermRoot, TestPermRootGroup, TestPermRootUser, TestPermissibleFromRoot
+# from .tests import TestPermissibleFromSelf, TestPermDomain, TestPermRole, TestPermDomainMember, TestPermissibleFromRoot

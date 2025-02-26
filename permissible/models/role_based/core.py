@@ -14,9 +14,9 @@ from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
-from .base_perm_root import AbstractModelMetaclass, BasePermDomain
-from .permissible_mixin import PermissibleMixin
-from .utils import clear_permissions_for_class, update_permissions_for_object
+from .base_perm_domain import AbstractModelMetaclass, BasePermDomain
+from ..permissible_mixin import PermissibleMixin
+from ..utils import clear_permissions_for_class, update_permissions_for_object
 from permissible.perm_def import PermDef
 from permissible.utils.signals import get_subclasses
 
@@ -367,11 +367,11 @@ class PermRole(
 
     @staticmethod
     def get_root_obj(group_id: int) -> Optional[PermDomain]:
-        all_perm_root_group_classes = get_subclasses(PermRole)
-        for perm_root_group_class in all_perm_root_group_classes:
-            root_field = perm_root_group_class.get_root_field()
+        all_perm_domain_role_classes = get_subclasses(PermRole)
+        for perm_domain_role_class in all_perm_domain_role_classes:
+            root_field = perm_domain_role_class.get_root_field()
             root_id_field_name = root_field.attname
-            root_id = perm_root_group_class.objects.filter(
+            root_id = perm_domain_role_class.objects.filter(
                 group_id=group_id
             ).values_list(root_id_field_name)[:1]
             if root_id:
@@ -388,7 +388,7 @@ class PermDomainMember(
     A model that acts at the through table between the `PermDomain` and `User`
     models.
 
-    Examples: `TeamUser(PermRootUserBase)`, `ProjecUser(PermRootUserBase)`
+    Examples: `TeamUser(PermDomainMemberBase)`, `ProjecUser(PermDomainMemberBase)`
 
     This allows faster retrieval of members of a team, for instance, as well as
     faster retrieval of teams for a user, for instance.

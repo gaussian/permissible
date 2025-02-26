@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.contrib.auth.models import Group
 from django.contrib.auth import get_user_model
 
-from permissible.models.hierarchical_perm_root import HierarchicalPermDomain
+from permissible.models import HierarchicalPermDomain
 
 
 # Define a dummy concrete model for HierarchicalPermDomain

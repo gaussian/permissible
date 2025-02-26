@@ -4,8 +4,8 @@ Provides form classes for managing object-level permissions through
 the Django admin interface. The main components are:
 
 - PermissibleFormBase: Base form for handling role changes
-- UserPermRootForm: Form for managing a user's roles across multiple PermRoot objects
-- PermRootForm: Form for managing multiple users' roles on a single PermRoot object
+- UserPermDomainForm: Form for managing a user's roles across multiple PermDomain objects
+- PermDomainForm: Form for managing multiple users' roles on a single PermDomain object
 
 This module does not require django-guardian for object-level permissions, but
 does benefit from it.
@@ -44,10 +44,12 @@ class PermissibleFormBase(forms.Form):
         widget=forms.HiddenInput, required=False, initial={"added": {}, "removed": {}}
     )
 
-    def __init__(self, perm_root_class, *args, **kwargs):
+    def __init__(self, perm_domain_class, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.perm_root_class = perm_root_class
-        self.perm_root_group_class = perm_root_class.get_group_join_rel().related_model
+        self.perm_domain_class = perm_domain_class
+        self.perm_domain_role_class = (
+            perm_domain_class.get_group_join_rel().related_model
+        )
         self.setup_fields()
 
     def setup_fields(self):
@@ -57,7 +59,7 @@ class PermissibleFormBase(forms.Form):
             for role_value, (
                 role_label,
                 _,
-            ) in self.perm_root_group_class.ROLE_DEFINITIONS.items()
+            ) in self.perm_domain_role_class.ROLE_DEFINITIONS.items()
         ]
         self.fields["roles"] = forms.MultipleChoiceField(
             choices=role_choices, required=False
@@ -71,7 +73,7 @@ class PermissibleFormBase(forms.Form):
         for role_changes_dict in role_changes.values():
             for obj_id_to_role_bool_dict in role_changes_dict.values():
                 for role in obj_id_to_role_bool_dict.keys():
-                    if role not in self.perm_root_group_class.ROLE_DEFINITIONS:
+                    if role not in self.perm_domain_role_class.ROLE_DEFINITIONS:
                         raise ValidationError(f"Invalid role: {role}")
         return role_changes
 
@@ -120,7 +122,7 @@ class PermissibleFormBase(forms.Form):
                 # In user mode: id_str is a root_id, target_user is fixed
                 # In root mode: id_str is a user_id, root_obj is fixed
                 if user:
-                    root_obj = self.perm_root_class.objects.get(pk=id_str)
+                    root_obj = self.perm_domain_class.objects.get(pk=id_str)
                     target_user = user
                 else:
                     root_obj = obj
@@ -169,13 +171,13 @@ class PermissibleFormBase(forms.Form):
         return user.has_perm(permission, obj)
 
 
-class PermRootForm(PermissibleFormBase):
+class PermDomainForm(PermissibleFormBase):
     def setup_fields(self):
         super().setup_fields()
         self.fields["user"] = forms.ModelChoiceField(
             queryset=User.objects.all(),
             widget=AutocompleteSelect(
-                self.perm_root_class._meta.get_field("users"), admin.site
+                self.perm_domain_class._meta.get_field("users"), admin.site
             ),
             required=False,
         )
@@ -188,16 +190,16 @@ class PermRootForm(PermissibleFormBase):
         )
 
 
-class UserPermRootForm(PermissibleFormBase):
+class UserPermDomainForm(PermissibleFormBase):
     def setup_fields(self):
         super().setup_fields()
         self.fields["perm_root_obj"] = forms.ModelChoiceField(
-            queryset=self.perm_root_class.objects.all(),
+            queryset=self.perm_domain_class.objects.all(),
             widget=AutocompleteSelect(
-                self.perm_root_class.get_user_join_rel().field, admin.site
+                self.perm_domain_class.get_user_join_rel().field, admin.site
             ),
             required=False,
-            label=f"Add {self.perm_root_class._meta.verbose_name} to user",
+            label=f"Add {self.perm_domain_class._meta.verbose_name} to user",
         )
 
     def save(self, *args, **kwargs):
