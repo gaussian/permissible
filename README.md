@@ -121,7 +121,7 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
 - Add `PermissibleMixin` to any model you want to protect
 - Define `global_action_perm_map` and `obj_action_perm_map` on each model, otherwise
   use mixins in `permissible.models.permission_mixin` that define them out of the
-  box (eg `PermissibleDenyDefaultMixin`, `PermissibleDefaultPerms`)
+  box (eg `PermissibleDenyPerms`, `PermissibleDefaultPerms`)
   - If defining `global_action_perm_map` and `obj_action_perm_map` on your own,
     remember that (just like Django's permission checking normally) both global
     and object permissions must pass
