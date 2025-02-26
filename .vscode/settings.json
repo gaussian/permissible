@@ -1,13 +1,15 @@
 {
     "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
     "python.terminal.activateEnvironment": true,
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": true,
     "python.testing.unittestArgs": [
-        // "--keepdb",
-        // "-v",
-        // "-s",
-        // "./tests",
-        // "-p",
-        // "test*.py"
+    //     // "--keepdb",
+    //     "-v2",
+    //     // "-s",
+    //     "./tests",
+        "-p",
+        "test*.py"
     ],
     "editor.formatOnSave": false,
     "[python]": {
@@ -21,6 +23,4 @@
     "[jsonc]": {
         "editor.tabSize": 4
     },
-    "python.testing.pytestEnabled": false,
-    "python.testing.unittestEnabled": true,
 }

@@ -182,13 +182,25 @@ class TestPermissiblePermsUnauthAllowed(unittest.TestCase):
         return instance
 
     def test_unauthenticated_allowed_but_checked(self):
-        # For PermissiblePermsUnauthAllowed, even unauthenticated users are checked.
+        # For PermissiblePermsUnauthAllowed, unauthenticated users are processed
+        # through the permission check and can be approved
         user = DummyUser(is_authenticated=False)
         view = DummyView(action="retrieve", detail=True)
         request = DummyRequest(user=user)
         perms = self.get_permission_instance(PermissiblePermsUnauthAllowed)
-        # In our dummy setup, global permission is True.
-        # However, in has_permission, if not authenticated, it returns False unless _ignore_model_permissions is True.
+        # In PermissiblePermsUnauthAllowed, authenticated_users_only is False,
+        # so the unauthenticated user will be processed through the permission check.
+        # Since our DummyModel.global_permission is True, the result should be True.
+        result = perms.has_permission(request, view)
+        self.assertTrue(result)
+
+    def test_global_permission_denied_for_unauthenticated(self):
+        # Test that an unauthenticated user is denied when global permission returns False
+        DummyModel.global_permission = False  # Set global permission to False
+        user = DummyUser(is_authenticated=False)
+        view = DummyView(action="retrieve", detail=True)
+        request = DummyRequest(user=user)
+        perms = self.get_permission_instance(PermissiblePermsUnauthAllowed)
         result = perms.has_permission(request, view)
         self.assertFalse(result)
 

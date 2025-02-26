@@ -34,13 +34,21 @@ class DummyDomain(PermDomain):
         get_user_model(), through="DummyDomainMember", related_name="dummy_domains"
     )
 
+    class Meta:
+        app_label = "permissible"  # Add explicit app_label
+        abstract = False
+
     def __str__(self):
         return self.name
 
     @classmethod
-    def get_permission_codenames(cls, short_perm_codes):
+    def get_permission_codenames(cls, short_perm_codes, include_app_label=True):
         # For testing purposes, simply return a dummy set of permission strings.
-        return {f"dummy_{code}" for code in short_perm_codes}
+        # Now handling the include_app_label parameter
+        if include_app_label:
+            return {f"permissible.dummy_{code}" for code in short_perm_codes}
+        else:
+            return {f"dummy_{code}" for code in short_perm_codes}
 
 
 class DummyDomainRole(PermDomainRole):
@@ -68,6 +76,8 @@ class DummyDomainMember(PermDomainMember):
     class Meta:
         app_label = "permissible"
         abstract = False
+        # Add a unique constraint for the domain and user
+        unique_together = ("dummydomain", "user")  # Add this line
 
     def get_unretrieved(self, attr):
         # For testing purposes, simply return the user's id.
