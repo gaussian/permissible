@@ -1,11 +1,9 @@
 import unittest
-from django.http import Http404
-from permissible.models.permissible_mixin import PermissibleDenyDefaultMixin
-from permissible.perm_def import IS_AUTHENTICATED
+from permissible.models import PermissibleDenyPerms
 
 # Pseudocode:
 # 1. Create a DummyUser class to simulate a PermissionsMixin user with attributes id and is_superuser.
-# 2. Create a DummyModel class that inherits from PermissibleDenyDefaultMixin to test its methods.
+# 2. Create a DummyModel class that inherits from PermissibleDenyPerms to test its methods.
 # 3. Write tests for:
 #    a. get_permissions_root_obj: It should return None.
 #    b. has_object_permission for non-list actions ("create", "retrieve", "update", "partial_update", "destroy"):
@@ -24,21 +22,17 @@ class DummyUser:
         self.is_superuser = is_superuser
 
 
-# Create a dummy model class for tests by inheriting from PermissibleDenyDefaultMixin.
-class DummyDenyDefaultModel(PermissibleDenyDefaultMixin):
+# Create a dummy model class for tests by inheriting from PermissibleDenyPerms.
+class DummyDenyDefaultModel(PermissibleDenyPerms):
     pass
 
 
-class TestPermissibleDenyDefaultMixin(unittest.TestCase):
+class TestPermissibleDenyPerms(unittest.TestCase):
 
     def setUp(self):
         self.normal_user = DummyUser(id=1, is_superuser=False)
         self.superuser = DummyUser(id=1, is_superuser=True)
         self.instance = DummyDenyDefaultModel()
-
-    def test_get_permissions_root_obj(self):
-        # get_permissions_root_obj should return None as defined in PermissibleDenyDefaultMixin.
-        self.assertIsNone(self.instance.get_permissions_root_obj())
 
     def test_has_object_permission_denies_actions_for_normal_user(self):
         # For actions mapped to DENY_ALL, has_object_permission should return False for normal user.

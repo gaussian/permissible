@@ -1,9 +1,9 @@
-from typing import Optional, Union
+from typing import Any, Optional, Type, Union
 
 from django.db import models
 
 
-class UnRetrievedModelMixin(object):
+class UnretrievedModelMixin(object):
     """
     Mixin to allow a model to retrieve an *unretrieved* model instance for a
     dot-separated chain of foreign keys, using exactly one DB query if multi-level,
@@ -16,94 +16,157 @@ class UnRetrievedModelMixin(object):
         using exactly one DB query if multi-level, and zero queries if single-level.
 
         Examples:
-            get_unretrieved("team")
-                -> returns Team(pk=self.team_id), no DB query
+        get_unretrieved("team")
+            -> returns Team(pk=self.team_id), no DB query
 
-            get_unretrieved("experiment.team")
-                -> single query: Experiment.objects.filter(pk=self.experiment_id)
-                                              .values_list("team_id", flat=True)
-                -> returns Team(pk=<that_team_id>)
+        get_unretrieved("experiment.team")
+            -> executes one query:
+                Experiment.objects.filter(pk=self.experiment_id)
+                        .values_list("team_id", flat=True)
+            -> returns Team(pk=<that_team_id>)
 
-            get_unretrieved("chainer_session.chainer.team")
-                -> single query: ChainerSession.objects.filter(pk=self.chainer_session_id)
-                                          .values_list("chainer__team_id", flat=True)
-                -> returns Team(pk=<the_team_id>)
+        get_unretrieved("chainer_session.chainer.team")
+            -> executes one query:
+                ChainerSession.objects.filter(pk=self.chainer_session_id)
+                            .values_list("chainer__team_id", flat=True)
+            -> returns Team(pk=<the_team_id>)
 
         Returns:
-            Model instance with the correct PK but not fetched (unretrieved),
-            or None if the PK is null or if the single query returns != 1 result.
+        A model instance with the correct primary key (but not fetched from the DB) or None
+        if the primary key is null or if the query returns a number of results != 1.
         """
-        chain = attr_key.split(".")
+        res = self._resolve_chain(attr_key)
+        final_model_class = res["final_model_class"]
 
-        # ------------------------------------------------
-        # 1) SINGLE-LEVEL SHORTCUT (NO DB QUERY)
-        # ------------------------------------------------
-        if len(chain) == 1:
-            attr_name = chain[0]
-            field = getattr(self.__class__, attr_name).field
-            final_model_class = field.related_model
-            final_pk = getattr(self, field.attname)  # e.g. self.team_id
-
-            if not final_pk:
-                return None
-
-            return final_model_class(pk=final_pk)
-
-        # ------------------------------------------------
-        # 2) MULTI-LEVEL LOOKUP (SINGLE DB QUERY)
-        # ------------------------------------------------
-        # Example chain: ["chainer_session", "chainer", "team"]
-
-        # (a) The "root" attribute on `self`: e.g. self.chainer_session_id
-        root_attr = chain[0]
-        root_field = getattr(self.__class__, root_attr).field
-        root_model_class = root_field.related_model
+        root_field = res["root_field"]
         root_pk = getattr(self, root_field.attname)
+        root_model_class = root_field.related_model
+
+        # The root_pk (eg self.team_id for an illustrative single-length chain,
+        # or self.opportunity_id for an illustrative multi-length chain) is null,
+        # so we can't proceed. This is not an error - the result is simply "None".
         if not root_pk:
             return None
 
-        # (b) The "penultimate" path in chain[1:-1]
-        #     e.g. chain[1:-1] = ["chainer"] for ["chainer_session","chainer","team"]
-        penultimate_path_list = chain[1:-1]  # all but last
-        penultimate_path_str = "__".join(penultimate_path_list)  # e.g. "chainer"
+        # If a query path is set, use it to find the final primary key, i.e.
+        # the primary key of the final model in the chain.
+        query_path = res.get("query_path", None)
+        if query_path:
+            # Filter to root models with the root PK, then use values_list
+            # to get the final PK (nested with "__" if appropriate).
+            results = list(
+                root_model_class.objects.filter(pk=root_pk).values_list(
+                    res["query_path"], flat=True
+                )
+            )
+            if len(results) != 1:
+                return None
+            final_pk = results[0]
 
-        # (c) Traverse penultimate_path_list to find the *penultimate model class*
-        penultimate_model_class = root_model_class
-        for sub_attr in penultimate_path_list:
-            sub_field = getattr(penultimate_model_class, sub_attr).field
-            penultimate_model_class = sub_field.related_model
+            # The primary key found is null, so no related object exists, so
+            # return None.
+            if not final_pk:
+                return None
 
-        # (d) The *final* attribute name & field attname
-        #     e.g. final_attr = "team", final_attname = "team_id"
-        final_attr = chain[-1]
-        final_field = getattr(penultimate_model_class, final_attr).field
-        final_model_class = final_field.related_model
-        final_attname = final_field.attname  # "team_id"
-
-        # (e) Build the final path for .values_list(...):
-        #     If penultimate_path_str is "chainer", we get "chainer__team_id"
-        #     If penultimate_path_str is empty, we get "team_id"
-        if penultimate_path_str:
-            final_path = f"{penultimate_path_str}__{final_attname}"
+        # If no query path is set, the final primary key is directly available.
         else:
-            final_path = final_attname
+            final_pk = root_pk
 
-        # (f) Single DB query on the root model
-        qs = root_model_class.objects.filter(pk=root_pk).values_list(
-            final_path, flat=True
-        )
-        results = list(qs)
-
-        # (g) Must have exactly 1 result
-        if len(results) != 1:
-            return None
-
-        final_pk = results[0]
-        if not final_pk:
-            return None
-
-        # (h) Return the "unretrieved" instance
+        # Return the unretrieved model instance (i.e. construct it, no retrieval).
         return final_model_class(pk=final_pk)
+
+    @classmethod
+    def get_unretrieved_class(cls, attr_key: str) -> Optional[Type[models.Model]]:
+        """
+        Return the final model class determined by a stored dot-separated attribute chain
+        in attr_key.
+
+        Example:
+        If attr_key is "experiment.team", this property returns the Team model class.
+        """
+        res = cls._resolve_chain(attr_key)
+        return res["final_model_class"]
+
+    @classmethod
+    def _resolve_chain(cls, attr_key: str) -> dict[str, Any]:
+        """
+        Traverse a dot-separated chain of foreign key attributes and return a dictionary
+        with all details needed to either directly construct the final model instance or
+        to perform a single DB query to retrieve the final primary key.
+
+        This method does NOT hit the database.
+
+        The returned dictionary contains:
+        - final_model_class: the model class of the final attribute in the chain.
+        - final_attname: the attribute name for the final field (for example, "team_id").
+        - root_field: the field of the first attribute in the chain, whose model
+                            will be queried.
+        - query_path: the lookup string (e.g. "chainer__team_id") to be used with
+                        .values_list() on the root model.
+
+        This helper unifies the chain resolution so that both direct (no DB query) and query
+        modes share the same traversal logic.
+
+        Examples:
+        - Single-level chain "team":
+                * Chain: ["team"]
+                * final_model_class is determined from the related field of 'team'.
+                * final_pk is taken from self.team_id.
+                * no DB hit will be needed.
+
+        - Multi-level chain "experiment.team":
+                * Chain: ["experiment", "team"]
+                * The root attribute "experiment" gives root_model_class and root_pk (from self.experiment_id).
+                * The final attribute "team" yields final_model_class and final_attname ("team_id").
+                * query_path becomes "team_id".
+                * DB hit will be needed.
+
+        - Multi-level chain "chainer_session.chainer.team":
+                * Chain: ["chainer_session", "chainer", "team"]
+                * The root attribute "chainer_session" gives root_model_class and root_pk (from self.chainer_session_id).
+                * The penultimate step ("chainer") is traversed.
+                * The final attribute "team" yields final_model_class and final_attname.
+                * query_path becomes "chainer__team_id".
+                * DB hit will be needed.
+        """
+        chain = attr_key.split(".")
+        current_model = cls
+        root_field = None
+
+        # Iterate through the chain to capture both the root and final field information.
+        for i, attr in enumerate(chain):
+            # Get the field descriptor from the current model class.
+            field = getattr(current_model, attr).field
+            if i == 0:
+                # Save the first field as the root field for later reference.
+                root_field = field
+            # Move to the related model for the next attribute in the chain.
+            current_model = field.related_model
+
+        # 'field' now holds the final attribute in the chain.
+        final_model_class = (
+            field.related_model
+        )  # The model class for the final attribute.
+        final_attname = field.attname  # e.g. "team_id"
+
+        result = {
+            "final_model_class": final_model_class,
+            "root_field": root_field,
+        }
+
+        # Build the query lookup path using intermediate attributes (if any).
+        # For chain ["chainer_session", "chainer", "team"]:
+        #   penultimate_path becomes "chainer" and query_path becomes "chainer__team_id".
+        if len(chain) > 1:
+            penultimate_path = "__".join(chain[1:-1])
+            query_path = (
+                f"{penultimate_path}__{final_attname}"
+                if penultimate_path
+                else final_attname
+            )
+            result["query_path"] = query_path
+
+        return result
 
     @classmethod
     def make_objs_from_data(

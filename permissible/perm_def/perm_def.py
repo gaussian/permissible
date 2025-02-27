@@ -7,19 +7,7 @@ from typing import List, Type, Union, Optional, Callable
 
 from django.contrib.auth.models import PermissionsMixin
 
-
-class ShortPermsMixin(object):
-    @classmethod
-    def get_permission_codename(cls, short_permission, include_app_label=True):
-        app_label_prefix = f"{cls._meta.app_label}." if include_app_label else ""
-        return f"{app_label_prefix}{short_permission}_{cls._meta.model_name}"
-
-    @classmethod
-    def get_permission_codenames(cls, short_permissions, include_app_label=True):
-        return [
-            cls.get_permission_codename(sp, include_app_label)
-            for sp in short_permissions
-        ]
+from .short_perms import ShortPermsMixin
 
 
 class PermDef:
@@ -45,8 +33,8 @@ class PermDef:
         """
         Initialize.
         :param short_perm_codes: A list of short permission codes, e.g. ["view", "change"]
-        :param obj_getter: A function/str that takes an initial object and returns its root
-        object, e.g. a "survey" might be the root of "survey question" objects
+        :param obj_getter: A function/str that takes an initial object and returns the obj to check
+        object, e.g. a "survey" might be the object to check for "survey question" objects
         :param condition_checker: A function/str that takes an object, the user, and additional
         context, and returns a boolean, which is AND'd with the result of user.has_perms to
         return whether permission is successful
@@ -99,20 +87,21 @@ class PermDef:
     ):
         """ """
         # Try to get the necessary object (if object-level permissions, fail if no obj found)
-        obj = self.get_obj(obj=obj, context=context)
+        obj = self.get_obj_to_check(obj=obj, context=context)
         if must_check_obj and (not obj or not obj.pk):
             return False
 
         # Check the "condition checker"
         obj_check_passes = self.check_condition(obj=obj, user=user, context=context)
 
-        # No permissions to check - return True
+        # If short_perm_codes is None, we cannot pass permissions
+        # (note that if short_perm_codes is [], permissions WILL ALWAYS pass)
         if self.short_perm_codes is None:
-            has_perms = True
-        else:
-            # Actually check permissions!
-            perms = obj_class.get_permission_codenames(self.short_perm_codes)
-            has_perms = user.has_perms(perms, obj)
+            return False
+
+        # Actually check permissions!
+        perms = obj_class.get_permission_codenames(self.short_perm_codes)
+        has_perms = user.has_perms(perms, obj)
 
         # Both `has_perms` and `check_condition` must have passed
         if has_perms and obj_check_passes:
@@ -120,7 +109,7 @@ class PermDef:
 
         return False
 
-    def get_obj(
+    def get_obj_to_check(
         self,
         obj: Optional[ShortPermsMixin],
         context=None,
@@ -129,9 +118,9 @@ class PermDef:
         Using the provided object and context, return the actual object for which we will
         be checking permissions.
 
-        :param obj: Initial object, from which to find root object
+        :param obj: Initial object, from which to find the object to check perms on
         :param context: Context dictionary for additional context
-        :return: Object (root object) for which permissions will be checked
+        :return: Object for which permissions will be checked
         """
         # Getter function is set - use it
         if self.obj_getter:
@@ -152,7 +141,7 @@ class PermDef:
         Using the provided object, context, and user, perform the condition check
         for this `PermDef`, if one was provided.
 
-        :param obj: Initial object, from which to find root object
+        :param obj: Initial object, from which to find the object to check perms on
         :param user: Authenticating user
         :param context: Context dictionary for additional context
         :return: Did check pass?
@@ -168,9 +157,20 @@ class PermDef:
         # ...or checker function is a lambda
         return self.condition_checker(obj, user, context)
 
+    def __or__(self, other):
+        from .composite import CompositePermDef
 
-ALLOW_ALL = None
-DENY_ALL = []
+        if not isinstance(other, PermDef):
+            return NotImplemented
+        return CompositePermDef([self, other], "or")
 
-IS_AUTHENTICATED = PermDef(None, condition_checker=lambda o, u, c: bool(u.pk))
-IS_PUBLIC = PermDef(None, condition_checker=lambda o, u, c: o.is_public)
+    def __and__(self, other):
+        from .composite import CompositePermDef
+
+        if not isinstance(other, PermDef):
+            return NotImplemented
+        return CompositePermDef([self, other], "and")
+
+
+# Shorthand alias for the class
+p = PermDef

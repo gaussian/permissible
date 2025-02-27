@@ -1,2 +1,2 @@
 from .default import PermissibleAdminMixin
-from .perm_root import PermRootAdminMixin, UserPermRootAdminMixin
+from .perm_domain import PermDomainAdminMixin, UserPermDomainAdminMixin

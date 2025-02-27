@@ -32,7 +32,7 @@
         <div style="overflow-x: auto;">
             <table style="margin-bottom: 30px">
                 <tr style="background-color: #eee">
-                    <th rowspan="2">{{ perm_root_name|capfirst }}s</th>
+                    <th rowspan="2">{{ perm_domain_name|capfirst }}s</th>
                     <th colspan="{{ first_roles.keys|length|default:0 }}" style="text-align: center">Roles</th>
                     <th rowspan="2">Resulting permissions this user has</th>
                 </tr>
@@ -42,17 +42,17 @@
                     {% endfor %}
                 </tr>
 
-                {% for root, data in root_to_roles.items %}
+                {% for domain, data in domain_to_roles.items %}
                     <tr>
                         <td>
-                            {% admin_change_url root as change_url %}
-                            <a href="{% url change_url root.pk %}">
-                                {{ root }}
+                            {% admin_change_url domain as change_url %}
+                            <a href="{% url change_url domain.pk %}">
+                                {{ domain }}
                             </a>
                         </td>
                         {% for role, role_users in data.roles.items %}
                             <td class="role-cell"
-                                data-root-id="{{ root.pk }}" 
+                                data-domain-id="{{ domain.pk }}" 
                                 data-role="{{ role }}">
                                 <span class="checkmark">
                                 {% if user.pk|stringformat:"s" in role_users %}
@@ -86,8 +86,8 @@
 <script>
 // Track role changes that will be submitted with the form
 const roleChanges = {
-    added: {},    // {root_id: {role: true}}
-    removed: {}   // {root_id: {role: true}}
+    added: {},    // {domain_id: {role: true}}
+    removed: {}   // {domain_id: {role: true}}
 };
 
 // Update the hidden form field with current role changes
@@ -100,7 +100,7 @@ function updateRoleChanges() {
 document.querySelectorAll('.role-cell').forEach(cell => {
     cell.addEventListener('click', function() {
         // Get metadata about this cell
-        const rootId = this.dataset.rootId;
+        const domainId = this.dataset.domainId;
         const role = this.dataset.role;
         const checkmark = this.querySelector('.checkmark');
         
@@ -109,9 +109,9 @@ document.querySelectorAll('.role-cell').forEach(cell => {
         const wasAdded = checkmark.textContent.includes('🔵');  // Pending addition
         const wasRemoved = checkmark.textContent.includes('❌'); // Pending removal
         
-        // Initialize role tracking for this root if needed
-        if (!roleChanges.added[rootId]) roleChanges.added[rootId] = {};
-        if (!roleChanges.removed[rootId]) roleChanges.removed[rootId] = {};
+        // Initialize role tracking for this domain if needed
+        if (!roleChanges.added[domainId]) roleChanges.added[domainId] = {};
+        if (!roleChanges.removed[domainId]) roleChanges.removed[domainId] = {};
         
         // State machine for role changes:
         // ✔️ (exists) -> ❌ (will remove)
@@ -120,24 +120,24 @@ document.querySelectorAll('.role-cell').forEach(cell => {
         // empty -> 🔵 (will add)
         if (hasCheck) {
             checkmark.textContent = '❌';
-            roleChanges.removed[rootId][role] = true;
+            roleChanges.removed[domainId][role] = true;
         } else if (wasRemoved) {
             checkmark.textContent = '✔️';
-            delete roleChanges.removed[rootId][role];
+            delete roleChanges.removed[domainId][role];
         } else if (wasAdded) {
             checkmark.textContent = '';
-            delete roleChanges.added[rootId][role];
+            delete roleChanges.added[domainId][role];
         } else {
             checkmark.textContent = '🔵';
-            roleChanges.added[rootId][role] = true;
+            roleChanges.added[domainId][role] = true;
         }
         
         // Clean up empty entries to keep the JSON clean
-        if (Object.keys(roleChanges.added[rootId] || {}).length === 0) {
-            delete roleChanges.added[rootId];
+        if (Object.keys(roleChanges.added[domainId] || {}).length === 0) {
+            delete roleChanges.added[domainId];
         }
-        if (Object.keys(roleChanges.removed[rootId] || {}).length === 0) {
-            delete roleChanges.removed[rootId];
+        if (Object.keys(roleChanges.removed[domainId] || {}).length === 0) {
+            delete roleChanges.removed[domainId];
         }
         
         // Update the form field

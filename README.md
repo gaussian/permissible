@@ -61,38 +61,42 @@ way to create the permissions in the first place. That's where the next two
 features come in.
 
 
-## Feature 2: Simple, role-based permissions assignment using "root" models (RBAC)
+## Feature 2: Simple, role-based permissions assignment using "domain" models (RBAC)
 
 The `permissible` library can also help automatically assign permissions based on
-certain "root" models. The root model is the model we should check permissions
-against. For instance, the root model for a "project file" might be a "project",
+certain "domain" models. The domain model is the model we should check permissions
+against. For instance, the domain model for a "project file" might be a "project",
 in which case having certain permissions on the "project" would confer other
 permissions for the "project files", even though no specific permission exists
-for the "project file".
+for the "project file". Loosely speaking, a domain "owns" other models. The concept of
+"domains" is fairly consistent in RBAC.
+
 Of course, it's easy to link a "project" to a "project file" through a foreign key.
 But `permissible` solves the problem of tying this to the Django `Group` model,
 which is what we use for permissions, according to **roles**.
 Each resulting `Group` (managed on the backend) corresponds to a single role.
 
 To accomplish this, `permissible` provides 3 base model classes that you should use:
-1. **`PermRoot`**: Make the root model (e.g. `Team`) derive from `PermRoot`
-2. **`PermRootGroup`**: Create a new model that derives from `PermRootGroup`
-and has a `ForeignKey` to the root model - and defines `ROLE_DEFINITIONS`
-3. **`PermRootUser`**: Create a new model that derives from `PermRootUser`
-and has a `ForeignKey` to the root model (this model automatically adds and
-removes records when a user is a member of the appropriate `PermRootGroup`)
+1. **`PermDomain`**: Make the domain model (e.g. `Team`) derive from `PermDomain`
+2. **`PermDomainRole`**: Create a new model that derives from `PermDomainRole`
+and has a `ForeignKey` to the domain model - and defines `ROLE_DEFINITIONS`
+3. **`PermDomainMember`**: Create a new model that derives from `PermDomainMember`
+and has a `ForeignKey` to the domain model (this model automatically adds and
+removes records when a user is a member of the appropriate `PermDomainRole`)
+
+Then, use **`DomainOwnedPermMixin`** on any models
 
 You can then simply adjust your permissions maps in `PermissibleMixin` to
-incorporate checking of the root model for permissions. See the documentation for
+incorporate checking of the domain model for permissions. See the documentation for
 `PermDef` and `PermissibleMixin.has_object_permissions` for info and examples.
 
-Remember: `PermRoot` is the core model on which roles are defined (eg Project or
-Team) and `PermRootGroup` is the model that represents a single role (and
-therefore a single Django `auth.Group`) for a single `PermRoot` - eg Team Admins.
-The `PermRootGroup.ROLE_DEFINITIONS` defines what object permissions will be
-given to each role/group for every `PermRoot`.
+Remember: `PermDomain` is the core model on which roles are defined (eg Project or
+Team) and `PermDomainRole` is the model that represents a single role (and
+therefore a single Django `auth.Group`) for a single `PermDomain` - eg Team Admins.
+The `PermDomainRole.ROLE_DEFINITIONS` defines what object permissions will be
+given to each role/group for every `PermDomain`.
 
-You can also use `PermRootAdminMixin` to help you manage the `PermRoot` records
+You can also use `PermDomainAdminMixin` to help you manage the `PermDomain` records
 and the subsequent role-based access control:
 
 ![RBAC admin](admin_1.png)
@@ -106,8 +110,8 @@ through use of 3 view-related mixins:
 permissions)
 - `serializers.PermissibleObjectAssignMixin` (for serializers - give creating user
 all permissions)
-- `serializers.PermissibleRootObjectAssignMixin` (for serializers for root models
-like "Team" or "Project - add creating user to all root model's Groups)
+- `serializers.PermDomainObjectAssignMixin` (for serializers for domain models
+like "Team" or "Project - add creating user to all domain model's Groups)
 
 NOTE: this feature is dependent on django-guardian, as it uses the `assign_perm`
 shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
@@ -121,7 +125,7 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
 - Add `PermissibleMixin` to any model you want to protect
 - Define `global_action_perm_map` and `obj_action_perm_map` on each model, otherwise
   use mixins in `permissible.models.permission_mixin` that define them out of the
-  box (eg `PermissibleDenyDefaultMixin`, `PermissibleDefaultPerms`)
+  box (eg `PermissibleDenyPerms`, `PermissibleDefaultPerms`)
   - If defining `global_action_perm_map` and `obj_action_perm_map` on your own,
     remember that (just like Django's permission checking normally) both global
     and object permissions must pass
@@ -142,7 +146,7 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
     - `obj_getter`: A function/str that takes the object we are checking, and returns
       a **potentially different** object on whom we will actually check permissions.
       (For instance if you want to check a related parent object to determine whether
-      the user has access to the child object. This is critical for PermRoot behavior.)
+      the user has access to the child object. This is critical for PermDomain behavior.)
     - `condition_checker`: An ADDITIONAL check, on top of the usual permissions-checking
       (`user.has_perms`).
 
@@ -152,9 +156,9 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
 - The application has the following models:
     - `User` (inherits Django's base abstract user model)
     - `Group` (Django's model)
-    - `Team` (inherits `PermRoot`)
-    - `TeamGroup` (inherits `PermRootGroup`)
-    - `TeamUser` (inherits `PermRootUser`)
+    - `Team` (inherits `PermDomain`)
+    - `TeamGroup` (inherits `PermDomainRole`)
+    - `TeamUser` (inherits `PermDomainMember`)
     - `TeamInfo` (contains a foreign key to `Team`)
    
 ### Create a team
@@ -164,7 +168,7 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
     (e.g. member, owner)
     - For each `TeamGroup`, the `save()` method triggers the creation of a new `Group`,
     and assigns permissions to each of these groups, in accordance with
-    `PermRootGroup.role_definitions`:
+    `PermDomainRole.role_definitions`:
         - `TeamGroup` with "Member" role is given no permissions
         - `TeamGroup` with "Viewer" role is given "view_team" permission
         - `TeamGroup` with "Contributor" role is given "contribute_to_team" and "view_team"
@@ -190,7 +194,7 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
     - View/viewset checks object permissions:
         - Checking object permission directly FAILS (as this user was not given any permission for
         this object in particular)
-        - Checking permission for root object (i.e. team) SUCCEEDS if the user was added to the
+        - Checking permission for domain object (i.e. team) SUCCEEDS if the user was added to the
         correct groups
 
 ### Create a team-related record
@@ -200,7 +204,7 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
     - View/viewset checks creation permissions:
         - Checking object permission directly FAILS as this object doesn't have an ID yet, so
         can't have any permissions associated with it
-        - Checking permission for root object (i.e. team) SUCCEEDS if the user was added to the
+        - Checking permission for domain object (i.e. team) SUCCEEDS if the user was added to the
         correct groups
     - View/viewset does not check object permission (this is out of our control, and makes sense
     as there is no object)

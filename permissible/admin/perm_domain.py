@@ -4,8 +4,8 @@ Provides mixins for managing object-level permissions through
 the Django admin interface. The main components are:
 
 - BasePermissibleViewMixin: Shared view logic for permission management
-- PermRootAdminMixin: Adds object-centric permission management to PermRootAdmin
-- UserPermRootAdminMixin: Adds user-centric permission management to UserAdmin
+- PermDomainAdminMixin: Adds object-centric permission management to PermDomainAdmin
+- UserPermDomainAdminMixin: Adds user-centric permission management to UserAdmin
 
 This module does not require django-guardian for object-level permissions, but
 does benefit from it.
@@ -25,10 +25,10 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from .forms import PermRootForm, PermissibleFormBase, UserPermRootForm
+from .forms import PermDomainForm, BaseRoleBasedForm, UserPermDomainForm
 
 if TYPE_CHECKING:
-    from permissible.models.perm_root import PermRoot
+    from permissible.models import PermDomain
 
 User = get_user_model()
 
@@ -44,9 +44,9 @@ class BasePermissibleViewMixin:
     - Building context data
     """
 
-    def get_role_to_user_id(self, perm_root_obj):
+    def get_role_to_user_id(self, perm_domain_obj):
         """
-        Build a mapping of roles to user IDs for a PermRoot object.
+        Build a mapping of roles to user IDs for a PermDomain object.
 
         This method:
         1. Gets all group joins (role assignments) for the object
@@ -60,16 +60,16 @@ class BasePermissibleViewMixin:
         """
         # First get all current role assignments
         role_to_user_ids = {
-            perm_root_group.role: [
+            perm_domain_role.role: [
                 str(u)
-                for u in perm_root_group.group.user_set.values_list("pk", flat=True)
+                for u in perm_domain_role.group.user_set.values_list("pk", flat=True)
             ]
-            for perm_root_group in perm_root_obj.get_group_joins().all()
+            for perm_domain_role in perm_domain_obj.get_role_joins().all()
         }
 
         # Get the predefined roles from the model
         base_roles = (
-            perm_root_obj.get_group_join_rel().related_model.ROLE_DEFINITIONS.keys()
+            perm_domain_obj.get_role_join_rel().related_model.ROLE_DEFINITIONS.keys()
         )
 
         # Create ordered mapping with base roles first
@@ -110,12 +110,12 @@ class BasePermissibleViewMixin:
 
         Args:
             request: The HTTP request
-            obj: The object being modified (User or PermRoot)
-            form_class: Form class to use (UserPermRootForm or PermRootForm)
+            obj: The object being modified (User or PermDomain)
+            form_class: Form class to use (UserPermDomainForm or PermDomainForm)
             template_name: Template to render
             context_extras: Additional context data
         """
-        if obj and not PermissibleFormBase.user_has_permission_change_perm(
+        if obj and not BaseRoleBasedForm.user_has_permission_change_perm(
             request.user, obj
         ):
             raise Http404("Lacking permission to change permissions")
@@ -138,23 +138,23 @@ class BasePermissibleViewMixin:
         return TemplateResponse(request, template_name, context)
 
 
-class PermRootAdminMixin(BasePermissibleViewMixin):
+class PermDomainAdminMixin(BasePermissibleViewMixin):
     """
-    Mixin for PermRoot model admins that adds permission management capabilities.
+    Mixin for PermDomain model admins that adds permission management capabilities.
 
-    Allows managing multiple users' roles on a single PermRoot object through
+    Allows managing multiple users' roles on a single PermDomain object through
     the Django admin interface. Also provides utilities for resetting permissions
     and managing permission groups.
     """
 
-    actions = ("reset_perm_groups",)
+    actions = ("reset_domain_roles",)
 
     @admin.action(description="Create or reset group/role permissions")
-    def reset_perm_groups(self, request, queryset):
+    def reset_domain_roles(self, request, queryset):
         """Admin action to reset permission groups for selected objects"""
-        for root_obj in queryset:
-            root_obj: PermRoot
-            root_obj.reset_perm_groups()
+        for domain_obj in queryset:
+            domain_obj: PermDomain
+            domain_obj.reset_domain_roles()
 
     def get_urls(self):
         urls = super().get_urls()
@@ -180,7 +180,7 @@ class PermRootAdminMixin(BasePermissibleViewMixin):
 
         # This is the mapping for role to user_id for any Users that are present
         # in the group joins for this object (i.e. have roles and are part of
-        # PermRootGroup groups)
+        # PermDomainRole groups)
         role_to_user_id = self.get_role_to_user_id(obj)
 
         # This is the mapping of user object to permissions list for this object
@@ -207,7 +207,7 @@ class PermRootAdminMixin(BasePermissibleViewMixin):
         return self.handle_permission_view(
             request,
             obj,
-            lambda *args: PermRootForm(self.model, *args),
+            lambda *args: PermDomainForm(self.model, *args),
             "admin/permissible_changeform.html",
             context_extras,
         )
@@ -227,23 +227,23 @@ class PermRootAdminMixin(BasePermissibleViewMixin):
         return format_html(html_format_string, url=url, link_text=link_text)
 
 
-class UserPermRootAdminMixin(BasePermissibleViewMixin):
+class UserPermDomainAdminMixin(BasePermissibleViewMixin):
     """
     Mixin for UserAdmin that adds permission management capabilities.
 
-    Allows managing a user's roles across multiple PermRoot objects through
-    the Django admin interface. Supports multiple types of PermRoot objects
-    (e.g., Teams, Projects) through the permissible_root_classes mapping.
+    Allows managing a user's roles across multiple PermDomain objects through
+    the Django admin interface. Supports multiple types of PermDomain objects
+    (e.g., Teams, Projects) through the domain_class_dict mapping.
     """
 
-    # Dictionary mapping type names to PermRoot model classes
+    # Dictionary mapping type names to PermDomain model classes
     # Example: {'team': TeamModel, 'project': ProjectModel}
-    permissible_root_classes: Dict[str, Type[PermRoot]] = {}
+    domain_class_dict: Dict[str, Type[PermDomain]] = {}
 
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = []
-        for perm_type in self.permissible_root_classes.keys():
+        for perm_type in self.domain_class_dict.keys():
             custom_urls.append(
                 path(
                     f"<path:object_id>/permissible/{perm_type}/",
@@ -257,61 +257,61 @@ class UserPermRootAdminMixin(BasePermissibleViewMixin):
             )
         return custom_urls + urls
 
-    def user_permissible_view(self, request, object_id, perm_root_type):
+    def user_permissible_view(self, request, object_id, perm_domain_type):
         """
         View for managing a user's roles across all objects of a specific type.
 
         Shows a matrix of:
-        - Rows: PermRoot objects
+        - Rows: PermDomain objects
         - Columns: Available roles
         - Cells: Checkboxes for role assignment
         """
         user = self.model.objects.get(pk=object_id)
         try:
-            perm_root_class = self.permissible_root_classes[perm_root_type]
+            perm_domain_class = self.domain_class_dict[perm_domain_type]
         except KeyError:
-            raise Http404(f"Unknown PermRoot type: {perm_root_type}")
+            raise Http404(f"Unknown PermDomain type: {perm_domain_type}")
 
-        # Get all PermRoot objects of the specified type
-        perm_roots = perm_root_class.objects.filter(users=user)
+        # Get all PermDomain objects of the specified type
+        perm_domains = perm_domain_class.objects.filter(users=user)
 
-        # Filter down to the PermRoot records that the request user has change_permission on
-        perm_roots = [
-            root
-            for root in perm_roots
-            if PermissibleFormBase.user_has_permission_change_perm(request.user, root)
+        # Filter down to the PermDomain records that the request user has change_permission on
+        perm_domains = [
+            domain
+            for domain in perm_domains
+            if BaseRoleBasedForm.user_has_permission_change_perm(request.user, domain)
         ]
 
-        root_to_roles = {
-            root: {
-                "roles": self.get_role_to_user_id(root),
-                "perms": self.get_perms_for_obj(root).get(user, []),
+        domain_to_roles = {
+            domain: {
+                "roles": self.get_role_to_user_id(domain),
+                "perms": self.get_perms_for_obj(domain).get(user, []),
             }
-            for root in perm_roots
+            for domain in perm_domains
         }
 
         context_extras = {
-            "title": f"Edit {user}'s roles in {perm_root_type}s",
-            "root_to_roles": root_to_roles,
+            "title": f"Edit {user}'s roles in {perm_domain_type}s",
+            "domain_to_roles": domain_to_roles,
             "first_roles": (
-                next(iter(root_to_roles.values()))["roles"] if root_to_roles else {}
+                next(iter(domain_to_roles.values()))["roles"] if domain_to_roles else {}
             ),
             "user": user,
-            "perm_root_name": perm_root_class._meta.verbose_name,
+            "perm_domain_name": perm_domain_class._meta.verbose_name,
         }
 
         return self.handle_permission_view(
             request,
             user,
-            lambda *args: UserPermRootForm(perm_root_class, *args),
+            lambda *args: UserPermDomainForm(perm_domain_class, *args),
             "admin/user_permissible_changeform.html",
             context_extras,
         )
 
     def permissible_groups_link(self, obj):
-        """Generate links for each configured PermRoot type"""
+        """Generate links for each configured PermDomain type"""
         links = []
-        for perm_type in self.permissible_root_classes.keys():
+        for perm_type in self.domain_class_dict.keys():
             url = reverse(
                 f"admin:{self.model._meta.app_label}_{self.model._meta.model_name}_permissible_{perm_type}",
                 args=[obj.pk],

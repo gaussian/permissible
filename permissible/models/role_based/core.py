@@ -14,23 +14,23 @@ from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
-from .base_perm_root import AbstractModelMetaclass, BasePermRoot
-from .permissible_mixin import PermissibleMixin
-from .utils import clear_permissions_for_class, update_permissions_for_object
+from .base import AbstractModelMetaclass, BasePermDomain
+from ..permissible_mixin import PermissibleMixin
+from ..utils import clear_permissions_for_class, update_permissions_for_object
 from permissible.perm_def import PermDef
 from permissible.utils.signals import get_subclasses
 
 
-class PermRoot(BasePermRoot):
+class PermDomain(BasePermDomain):
     """
-    A model that has a corresponding `PermRootGroup` to associate it with a
+    A model that has a corresponding `PermDomainRole` to associate it with a
     `Group` model, thereby extending the fields and functionality of the default
     Django `Group` model.
 
-    Examples: `Team(PermRoot)`, `Project(PermRoot)`
+    Examples: `Team(PermDomain)`, `Project(PermDomain)`
 
     IMPORTANT: the inheriting class must define:
-    - a `ForeignKey to the `PermRoot` model
+    - a `ForeignKey to the `PermDomain` model
     - `groups`, a `ManyToManyField` to the Group model
     """
 
@@ -39,7 +39,7 @@ class PermRoot(BasePermRoot):
 
     @property
     @abstractmethod
-    def groups(self) -> models.ManyToManyField[PermRoot, Group]:
+    def groups(self) -> models.ManyToManyField[PermDomain, Group]:
         """
         e.g. `groups = models.ManyToManyField("auth.Group", through="TeamGroup", related_name="teams")`
         """
@@ -47,7 +47,7 @@ class PermRoot(BasePermRoot):
 
     @property
     @abstractmethod
-    def users(self) -> models.ManyToManyField[PermRoot, AbstractBaseUser]:
+    def users(self) -> models.ManyToManyField[PermDomain, AbstractBaseUser]:
         """
         e.g. `users = models.ManyToManyField("accounts.User", through="TeamUser", related_name="teams")`
         """
@@ -56,8 +56,8 @@ class PermRoot(BasePermRoot):
     def save(self, *args, **kwargs):
         """
         Save the model. On save, automatically create one (associated)
-        `PermRootGroup` record for each role option in the (associated)
-        `PermRootGroup` model.
+        `PermDomainRole` record for each role option in the (associated)
+        `PermDomainRole` model.
 
         :param args:
         :param kwargs:
@@ -67,51 +67,51 @@ class PermRoot(BasePermRoot):
 
         super().save(*args, **kwargs)
 
-        # For new root objects, create the necessary groups/join objects
+        # For new domain objects, create the necessary groups/join objects
         if adding:
-            self.reset_perm_groups()
+            self.reset_domain_roles()
 
-    def get_permission_targets(self) -> Iterable[PermRoot]:
+    def get_permission_targets(self) -> Iterable[PermDomain]:
         """
-        Return an iterable (or generator) of PermRoot objects for which
+        Return an iterable (or generator) of PermDomain objects for which
         permissions should be set based on this instance.
-        For a regular PermRoot, simply yield self.
+        For a regular PermDomain, simply yield self.
         """
         yield self
 
-    def reset_perm_groups(self):
+    def reset_domain_roles(self):
         """
-        Create the associated `PermRootGroup` and `Group` objects for this
-        `PermRoot`.
+        Create the associated `PermDomainRole` and `Group` objects for this
+        `PermDomain`.
         """
-        # Find the PermRootGroup model
-        root_group_model_class: Type[PermRootGroup] = (
-            self.get_group_join_rel().related_model
+        # Find the PermDomainRole model
+        domain_role_model_class: Type[PermDomainRole] = (
+            self.get_role_join_rel().related_model
         )
 
-        print(f"Resetting permissions for PermRoot {self}")
+        # print(f"Resetting permissions for PermDomain {self}")
 
-        # Create/update PermRootGroup for each role in possible roles
-        role_choices = root_group_model_class._meta.get_field("role").choices
+        # Create/update PermDomainRole for each role in possible roles
+        role_choices = domain_role_model_class._meta.get_field("role").choices
         assert isinstance(role_choices, Iterable)
         for role, _ in role_choices:
-            root_group_obj, created = root_group_model_class.objects.get_or_create(
+            domain_role_obj, created = domain_role_model_class.objects.get_or_create(
                 role=role, **{self._meta.model_name: self}
             )
 
-            # Force reassigning of permissions if not a new PermRootGroup
+            # Force reassigning of permissions if not a new PermDomainRole
             if not created:
-                root_group_obj: PermRootGroup
-                root_group_obj.reset_permissions_for_group(clear_existing=True)
+                domain_role_obj: PermDomainRole
+                domain_role_obj.reset_permissions(clear_existing=True)
 
     def get_group_ids_for_roles(self, roles=None):
-        root_group_model_class = self.get_group_join_rel().related_model
+        domain_role_model_class = self.get_role_join_rel().related_model
 
-        role_choices = root_group_model_class._meta.get_field("role").choices
+        role_choices = domain_role_model_class._meta.get_field("role").choices
         assert isinstance(role_choices, Iterable)
         roles = roles if roles is not None else [role for role, _ in role_choices]
 
-        return root_group_model_class.objects.filter(
+        return domain_role_model_class.objects.filter(
             role__in=roles, **{self._meta.model_name: self}
         ).values_list("group_id", flat=True)
 
@@ -125,20 +125,20 @@ class PermRoot(BasePermRoot):
         user.groups.remove(*group_ids)
 
     @classmethod
-    def get_group_join_rel(cls) -> models.ManyToOneRel:
+    def get_role_join_rel(cls) -> models.ManyToOneRel:
         """
-        Find the join relation for the (one and only one) `PermRootGroup`
+        Find the join relation for the (one and only one) `PermDomainRole`
         relation
         """
-        return cls._get_join_rel(PermRootGroup)
+        return cls._get_join_rel(PermDomainRole)
 
     @classmethod
     def get_user_join_rel(cls) -> models.ManyToOneRel:
         """
-        Find the join relation for the (one and only one) `PermRootUser`
+        Find the join relation for the (one and only one) `PermDomainMember`
         relation
         """
-        return cls._get_join_rel(PermRootUser)
+        return cls._get_join_rel(PermDomainMember)
 
     @classmethod
     def _get_join_rel(cls, subclass) -> models.ManyToOneRel:
@@ -162,49 +162,39 @@ class PermRoot(BasePermRoot):
         assert user_join_attr_name
         return getattr(self, user_join_attr_name)
 
-    def get_group_joins(self):
-        group_join_attr_name = self.get_group_join_rel().related_name
+    def get_role_joins(self):
+        group_join_attr_name = self.get_role_join_rel().related_name
         assert group_join_attr_name
         return getattr(self, group_join_attr_name)
 
     def get_member_group_id(self):
-        group_join_obj = self.get_group_joins().filter(role="mem").first()
+        group_join_obj = self.get_role_joins().filter(role="mem").first()
         if group_join_obj:
             return group_join_obj.group_id
         return None
 
-    # TODO: delete this, not needed as the PermRootGroup models are created on
-    #      `PermRoot.save()` anyway
-    # def copy_related_records(self, new_obj):
-    #     remote_field_name = self.get_group_join_rel().remote_field.attname
-    #     for group_join_obj in self.get_group_joins().all():
-    #         group_join_obj.pk = None
-    #         group_join_obj.group_id = None
-    #         setattr(group_join_obj, remote_field_name, new_obj.pk)
-    #         group_join_obj.save()
 
-
-class PermRootFieldModelMixin(object):
+class PermDomainFieldMixin(object):
     @classmethod
-    def get_root_field(cls) -> models.ForeignKey[PermRoot]:
+    def get_domain_field(cls) -> models.ForeignKey[PermDomain]:
         """
-        Find the root field for the (one and only one) `PermRoot`
+        Find the domain field for the (one and only one) `PermDomain`
         foreign-key relation
         """
-        root_fields = [
+        domain_fields = [
             field
             for field in cls._meta.get_fields()
             if isinstance(field, models.ForeignKey)
-            and issubclass(field.related_model, PermRoot)
+            and issubclass(field.related_model, PermDomain)
         ]
 
-        assert len(root_fields) == 1, (
-            f"The associated `PermRoot` for this model (`{cls}`) has "
+        assert len(domain_fields) == 1, (
+            f"The associated `PermDomain` for this model (`{cls}`) has "
             f"been set up incorrectly. Make sure this class has one (and only one) "
-            f"ForeignKey to a `PermRootGroup`."
+            f"ForeignKey to a `PermDomainRole`."
         )
 
-        return root_fields[0]
+        return domain_fields[0]
 
 
 def build_role_field(role_definitions):
@@ -220,14 +210,14 @@ def build_role_field(role_definitions):
     )
 
 
-class PermRootGroup(
-    PermRootFieldModelMixin,
+class PermDomainRole(
+    PermDomainFieldMixin,
     models.Model,
     metaclass=AbstractModelMetaclass,
 ):
     """
     Base abstract model that joins the Django Group model to another model
-    (`PermRoot`), such as "Team" or "Project". This allows us to have
+    (`PermDomain`), such as "Team" or "Project". This allows us to have
     additional functionality tied to the Group:
     - Tying to business logic, e.g. Team or Project
     - Adding extra fields without modifying Group
@@ -237,10 +227,10 @@ class PermRootGroup(
     The models that inherit from this abstract model must also define the join
     key to the model needed, e.g. `team = ForeignKey("accounts.Team")`
 
-    Note that one PermRootGroup has only one Group.
+    Note that one PermDomainRole has only one Group.
 
     IMPORTANT: the inheriting class must define:
-    - a `ForeignKey to the `PermRoot` model
+    - a `ForeignKey to the `PermDomain` model
     """
 
     # Owning Group (one-to-one relationship)
@@ -287,7 +277,7 @@ class PermRootGroup(
         @receiver(post_delete, sender=cls)
         def post_delete_handler(sender, instance, **kwargs):
             """
-            Upon deleting a PermRootGroup subclass, delete the connected Group
+            Upon deleting a PermDomainRole subclass, delete the connected Group
             (we do it this way to be able to attach to all subclasses).
             """
             instance.group.delete()
@@ -296,15 +286,15 @@ class PermRootGroup(
             )
 
     def __str__(self):
-        root_field = self.get_root_field()
-        root_obj = getattr(self, root_field.name)
-        root_obj_class = root_field.related_model
-        class_label = root_obj_class._meta.app_label + "." + root_obj_class.__name__
-        return f"[{self.role}][{class_label}] {root_obj} [{root_obj.id}]"
+        domain_field = self.get_domain_field()
+        domain_obj = getattr(self, domain_field.name)
+        domain_obj_class = domain_field.related_model
+        class_label = domain_obj_class._meta.app_label + "." + domain_obj_class.__name__
+        return f"[{self.role}][{class_label}] {domain_obj} [{domain_obj.id}]"
 
-    def reset_permissions_for_group(self, clear_existing=False):
+    def reset_permissions(self, clear_existing=False):
         """
-        Assign the correct permissions over the associated `PermRoot` to this
+        Assign the correct permissions over the associated `PermDomain` to this
         object's Group, according to `self.ROLE_DEFINITIONS`.
 
         Ideally, this is only called when the object (and its Group) are created,
@@ -312,13 +302,15 @@ class PermRootGroup(
         troubleshooting.
         """
 
-        # Find the root object associated with thie object (PermRoot)
-        root_field = self.get_root_field()
-        root_obj: PermRoot = getattr(self, root_field.name)
+        # Find the domain object associated with thie object (PermDomain)
+        domain_field = self.get_domain_field()
+        domain_obj: PermDomain = getattr(self, domain_field.name)
 
         # Clear existing permissions if requested
         if clear_existing:
-            clear_permissions_for_class(group=self.group, obj_class=root_obj.__class__)
+            clear_permissions_for_class(
+                group=self.group, obj_class=domain_obj.__class__
+            )
             # print("==== Cleared existing permissions ====")
 
         # Determine the new set of permission codenames based on ROLE_DEFINITIONS
@@ -326,11 +318,11 @@ class PermRootGroup(
         _, short_perm_codes = self.ROLE_DEFINITIONS[self.role]
 
         # We need to give/update permissions for the relevant permission target(s)
-        # for this root object - by default (and almost always) this is simply
-        # the root object itself; however, in certain cases (eg in the subclass
-        # of `PermRoot` called `HierarchicalPermRoot`) this may be different (eg
+        # for this domain object - by default (and almost always) this is simply
+        # the domain object itself; however, in certain cases (eg in the subclass
+        # of `PermDomain` called `HierarchicalPermDomain`) this may be different (eg
         # it may be chidren objects)
-        for obj in root_obj.get_permission_targets():
+        for obj in domain_obj.get_permission_targets():
             update_permissions_for_object(
                 # These permissions...
                 short_perm_codes=short_perm_codes,
@@ -347,50 +339,50 @@ class PermRootGroup(
         `self.ROLE_DEFINITIONS`.
         """
 
-        # Create Group before adding a PermRootGroup
+        # Create Group before adding a PermDomainRole
         if not self.group_id:
             group = Group(name=str(self))
             group.save()
             self.group_id = group.pk
 
         # Set or reset the Group's permissions
-        self.reset_permissions_for_group()
+        self.reset_permissions()
 
         return super().save(*args, **kwargs)
 
     @classmethod
-    def get_root_user_model_class(cls) -> Type[PermRootUser]:
+    def get_domain_member_model_class(cls) -> Type[PermDomainMember]:
         """
-        Find the model class for the (one and only one) `PermRootUser` model,
-        found via the `PermRoot` foreign-key relation
+        Find the model class for the (one and only one) `PermDomainMember` model,
+        found via the `PermDomain` foreign-key relation
         """
-        root_model_class = cls.get_root_field().related_model
-        return root_model_class.get_user_join_rel().related_model
+        domain_model_class = cls.get_domain_field().related_model
+        return domain_model_class.get_user_join_rel().related_model
 
     @staticmethod
-    def get_root_obj(group_id: int) -> Optional[PermRoot]:
-        all_perm_root_group_classes = get_subclasses(PermRootGroup)
-        for perm_root_group_class in all_perm_root_group_classes:
-            root_field = perm_root_group_class.get_root_field()
-            root_id_field_name = root_field.attname
-            root_id = perm_root_group_class.objects.filter(
+    def get_domain_obj(group_id: int) -> Optional[PermDomain]:
+        all_perm_domain_role_classes = get_subclasses(PermDomainRole)
+        for perm_domain_role_class in all_perm_domain_role_classes:
+            domain_field = perm_domain_role_class.get_domain_field()
+            domain_id_field_name = domain_field.attname
+            domain_id = perm_domain_role_class.objects.filter(
                 group_id=group_id
-            ).values_list(root_id_field_name)[:1]
-            if root_id:
-                return root_field.related_model(pk=root_id)
+            ).values_list(domain_id_field_name)[:1]
+            if domain_id:
+                return domain_field.related_model(pk=domain_id)
 
 
-class PermRootUser(
-    PermRootFieldModelMixin,
+class PermDomainMember(
+    PermDomainFieldMixin,
     PermissibleMixin,
     models.Model,
     metaclass=AbstractModelMetaclass,
 ):
     """
-    A model that acts at the through table between the `PermRoot` and `User`
+    A model that acts at the through table between the `PermDomain` and `User`
     models.
 
-    Examples: `TeamUser(PermRootUserBase)`, `ProjecUser(PermRootUserBase)`
+    Examples: `TeamUser(PermDomainMemberBase)`, `ProjecUser(PermDomainMemberBase)`
 
     This allows faster retrieval of members of a team, for instance, as well as
     faster retrieval of teams for a user, for instance.
@@ -399,8 +391,8 @@ class PermRootUser(
     in `permissible.signals`) when a user is added or removed from a group.
 
     IMPORTANT: the inheriting class must define:
-    - a `ForeignKey to the `PermRoot` model
-    - a joint unique condition on the `PermRoot` and `User` fields (the user field
+    - a `ForeignKey to the `PermDomain` model
+    - a joint unique condition on the `PermDomain` and `User` fields (the user field
         has `db_index=False` so the index must be part of the UNIQUE instead)
     """
 
@@ -413,26 +405,27 @@ class PermRootUser(
 
     # Permissions:
     # All actions have perm_def_admin, which gives permissions to those who have
-    # the "change_permission" permission on the associated PermRoot object.
+    # the "change_permission" permission on the associated PermDomain object.
     # All actions besides "destroy" have perm_def_self, which gives permissions
-    # to the user who is the user field of this PermRootUser.
+    # to the user who is the user field of this PermDomainMember.
     perm_def_self = PermDef(
         None,
         condition_checker=lambda o, u, c: o.user_id == u.id,
     )
     perm_def_admin = PermDef(
         ["change_permission"],
+        # This is joined user (unretrieved)
         obj_getter=lambda o, c: o.get_unretrieved("user"),
     )
-    perm_defs = [perm_def_self, perm_def_admin]
+    perm_defs_both = [perm_def_self, perm_def_admin]
     obj_action_perm_map = {
-        "retrieve": perm_defs,
-        "update": perm_defs,
-        "partial_update": perm_defs,
+        "retrieve": perm_defs_both,
+        "update": perm_defs_both,
+        "partial_update": perm_defs_both,
         "destroy": [perm_def_admin],
     }
 
     def __str__(self):
-        root_field = self.get_root_field()
-        root_obj = getattr(self, root_field.name)
-        return f"{root_obj} / {self.user}"
+        domain_field = self.get_domain_field()
+        domain_obj = getattr(self, domain_field.name)
+        return f"{domain_obj} / {self.user}"
