@@ -97,11 +97,11 @@ class PermDef:
         # If short_perm_codes is None, we cannot pass permissions
         # (note that if short_perm_codes is [], permissions WILL ALWAYS pass)
         if self.short_perm_codes is None:
-            has_perms = False
-        else:
-            # Actually check permissions!
-            perms = obj_class.get_permission_codenames(self.short_perm_codes)
-            has_perms = user.has_perms(perms, obj)
+            return False
+
+        # Actually check permissions!
+        perms = obj_class.get_permission_codenames(self.short_perm_codes)
+        has_perms = user.has_perms(perms, obj)
 
         # Both `has_perms` and `check_condition` must have passed
         if has_perms and obj_check_passes:

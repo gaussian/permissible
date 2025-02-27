@@ -50,14 +50,14 @@ class UnretrievedModelMixin(object):
 
         # If a query path is set, use it to find the final primary key, i.e.
         # the primary key of the final model in the chain.
-        query_path = res["query_path"]
+        query_path = res.get("query_path", None)
         if query_path:
             # Filter to root models with the root PK, then use values_list
             # to get the final PK (nested with "__" if appropriate).
             results = list(
-                res["root_model_class"]
-                .objects.filter(pk=root_pk)
-                .values_list(res["query_path"], flat=True)
+                root_model_class.objects.filter(pk=root_pk).values_list(
+                    res["query_path"], flat=True
+                )
             )
             if len(results) != 1:
                 return None
@@ -149,6 +149,11 @@ class UnretrievedModelMixin(object):
         )  # The model class for the final attribute.
         final_attname = field.attname  # e.g. "team_id"
 
+        result = {
+            "final_model_class": final_model_class,
+            "root_field": root_field,
+        }
+
         # Build the query lookup path using intermediate attributes (if any).
         # For chain ["chainer_session", "chainer", "team"]:
         #   penultimate_path becomes "chainer" and query_path becomes "chainer__team_id".
@@ -159,12 +164,9 @@ class UnretrievedModelMixin(object):
                 if penultimate_path
                 else final_attname
             )
+            result["query_path"] = query_path
 
-        return {
-            "final_model_class": final_model_class,
-            "root_field": root_field,
-            "query_path": query_path,
-        }
+        return result
 
     @classmethod
     def make_objs_from_data(

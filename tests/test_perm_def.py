@@ -1,5 +1,6 @@
 import unittest
 from permissible.perm_def import PermDef
+from permissible.perm_def.short_perms import ShortPermsMixin
 
 # Pseudocode:
 # 1. Create dummy classes for testing:
@@ -39,19 +40,12 @@ class DummyUser:
 
 
 # Dummy object simulating ShortPermsMixin
-class DummyObj:
+class DummyObj(ShortPermsMixin):
     _meta = type("Meta", (), {"app_label": "testapp", "model_name": "dummy"})
 
     def __init__(self, pk, allowed=True):
         self.pk = pk
         self.allowed = allowed
-
-    def get_permission_codenames(self, short_permissions):
-        # Return permission codes in the format "app_label.view_dummy" for "view"
-        return [
-            f"{self._meta.app_label}.{sp}_{self._meta.model_name}"
-            for sp in short_permissions
-        ]
 
     # Example method for string-based condition checking
     def can_do(self, user, context):
@@ -64,7 +58,7 @@ class DummyRootObj(DummyObj):
 
 
 # Dummy object with a method getter for string-based obj_getter
-class DummyWithGetterStr:
+class DummyWithGetterStr(DummyObj):
     def __init__(self, root_obj):
         self.root_obj = root_obj
         self.pk = 999  # dummy pk for the parent, not used
@@ -76,13 +70,22 @@ class DummyWithGetterStr:
 class TestPermDef(unittest.TestCase):
 
     def test_check_global_success(self):
-        # PermDef with no short_perm_codes and condition_checker always True.
+        # PermDef with empty short_perm_codes and condition_checker always True.
+        perm_def = PermDef(short_perm_codes=[], condition_checker=lambda o, u, c: True)
+        user = DummyUser(id=1)
+        # Updated: pass DummyObj as the obj_class.
+        self.assertTrue(
+            perm_def.check_global(DummyObj, user, context={"extra": "value"})
+        )
+
+    def test_check_global_fail(self):
+        # PermDef with null short_perm_codes and condition_checker always True.
         perm_def = PermDef(
             short_perm_codes=None, condition_checker=lambda o, u, c: True
         )
         user = DummyUser(id=1)
         # Updated: pass DummyObj as the obj_class.
-        self.assertTrue(
+        self.assertFalse(
             perm_def.check_global(DummyObj, user, context={"extra": "value"})
         )
 
@@ -97,7 +100,7 @@ class TestPermDef(unittest.TestCase):
 
     def test_check_global_no_condition(self):
         # When no condition_checker is provided, check_condition defaults to True.
-        perm_def = PermDef(short_perm_codes=None)
+        perm_def = PermDef(short_perm_codes=[])
         user = DummyUser(id=1)
         self.assertTrue(perm_def.check_global(DummyObj, user))
 

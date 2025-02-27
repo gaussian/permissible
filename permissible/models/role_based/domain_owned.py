@@ -4,15 +4,13 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
 from functools import lru_cache
-from typing import TYPE_CHECKING, Type
+from typing import Type
 
 from permissible.perm_def import p
 
+from .core import PermDomain
 from ..mixins import PermissibleCreateIfAuthPerms
 from ..permissible_mixin import PermissibleMixin
-
-if TYPE_CHECKING:
-    from .core import PermDomain
 
 
 class DomainOwnedPermMixin(PermissibleMixin):

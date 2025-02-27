@@ -4,12 +4,11 @@
     "python.testing.pytestEnabled": false,
     "python.testing.unittestEnabled": true,
     "python.testing.unittestArgs": [
-    //     // "--keepdb",
-    //     "-v2",
-    //     // "-s",
-    //     "./tests",
-        "-p",
-        "test*.py"
+        // "--keepdb",
+        "-v",
+        "2",
+        // "-p",
+        // "test*.py"
     ],
     "editor.formatOnSave": false,
     "[python]": {
