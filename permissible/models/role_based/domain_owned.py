@@ -24,13 +24,6 @@ class DomainOwnedPermMixin(PermissibleMixin):
 
     PERM_DOMAIN_ATTR_PATH = None
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        if cls.PERM_DOMAIN_ATTR_PATH is None:
-            raise NotImplementedError(
-                f"{cls.__name__} must define the class variable PERM_DOMAIN_ATTR_PATH"
-            )
-
     def get_domain(self) -> PermDomain:
         """
         Return the PermDomain object associated with this instance.
