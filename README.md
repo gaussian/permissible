@@ -68,7 +68,9 @@ certain "domain" models. The domain model is the model we should check permissio
 against. For instance, the domain model for a "project file" might be a "project",
 in which case having certain permissions on the "project" would confer other
 permissions for the "project files", even though no specific permission exists
-for the "project file".
+for the "project file". Loosely speaking, a domain "owns" other models. The concept of
+"domains" is fairly consistent in RBAC.
+
 Of course, it's easy to link a "project" to a "project file" through a foreign key.
 But `permissible` solves the problem of tying this to the Django `Group` model,
 which is what we use for permissions, according to **roles**.
@@ -81,6 +83,8 @@ and has a `ForeignKey` to the domain model - and defines `ROLE_DEFINITIONS`
 3. **`PermDomainMember`**: Create a new model that derives from `PermDomainMember`
 and has a `ForeignKey` to the domain model (this model automatically adds and
 removes records when a user is a member of the appropriate `PermDomainRole`)
+
+Then, use **`DomainOwnedPermMixin`** on any models
 
 You can then simply adjust your permissions maps in `PermissibleMixin` to
 incorporate checking of the domain model for permissions. See the documentation for
