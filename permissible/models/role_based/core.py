@@ -102,7 +102,7 @@ class PermDomain(BasePermDomain):
             # Force reassigning of permissions if not a new PermDomainRole
             if not created:
                 domain_role_obj: PermDomainRole
-                domain_role_obj.reset_permissions_for_group(clear_existing=True)
+                domain_role_obj.reset_permissions(clear_existing=True)
 
     def get_group_ids_for_roles(self, roles=None):
         domain_role_model_class = self.get_role_join_rel().related_model
@@ -292,7 +292,7 @@ class PermDomainRole(
         class_label = domain_obj_class._meta.app_label + "." + domain_obj_class.__name__
         return f"[{self.role}][{class_label}] {domain_obj} [{domain_obj.id}]"
 
-    def reset_permissions_for_group(self, clear_existing=False):
+    def reset_permissions(self, clear_existing=False):
         """
         Assign the correct permissions over the associated `PermDomain` to this
         object's Group, according to `self.ROLE_DEFINITIONS`.
@@ -346,7 +346,7 @@ class PermDomainRole(
             self.group_id = group.pk
 
         # Set or reset the Group's permissions
-        self.reset_permissions_for_group()
+        self.reset_permissions()
 
         return super().save(*args, **kwargs)
 
@@ -414,13 +414,14 @@ class PermDomainMember(
     )
     perm_def_admin = PermDef(
         ["change_permission"],
+        # This is joined user (unretrieved)
         obj_getter=lambda o, c: o.get_unretrieved("user"),
     )
-    perm_defs = [perm_def_self, perm_def_admin]
+    perm_defs_both = [perm_def_self, perm_def_admin]
     obj_action_perm_map = {
-        "retrieve": perm_defs,
-        "update": perm_defs,
-        "partial_update": perm_defs,
+        "retrieve": perm_defs_both,
+        "update": perm_defs_both,
+        "partial_update": perm_defs_both,
         "destroy": [perm_def_admin],
     }
 

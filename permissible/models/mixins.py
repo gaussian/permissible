@@ -1,6 +1,8 @@
 from typing import Optional, Type
+
+from permissible.perm_def import ALLOW_ALL, DENY_ALL, IS_AUTHENTICATED, p
+
 from .permissible_mixin import PermissibleMixin
-from permissible.perm_def import ALLOW_ALL, DENY_ALL, IS_AUTHENTICATED, PermDef
 
 
 class PermissibleRejectGlobalPermissionsMixin(PermissibleMixin):
@@ -12,7 +14,7 @@ class PermissibleRejectGlobalPermissionsMixin(PermissibleMixin):
 
 
 class PermissibleCreateIfAuthPerms(PermissibleMixin):
-    global_action_perm_map = {"list": [IS_AUTHENTICATED]}
+    global_action_perm_map = {"list": IS_AUTHENTICATED}
 
 
 class PermissibleDenyPerms(PermissibleCreateIfAuthPerms):
@@ -48,10 +50,10 @@ class PermissibleDefaultPerms(PermissibleCreateIfAuthPerms):
 
     obj_action_perm_map = {
         "create": DENY_ALL,
-        "retrieve": [PermDef(["view"])],
-        "update": [PermDef(["change"])],
-        "partial_update": [PermDef(["change"])],
-        "destroy": [PermDef(["delete"])],
+        "retrieve": p(["view"]),
+        "update": p(["change"]),
+        "partial_update": p(["change"]),
+        "destroy": p(["delete"]),
     }
 
 
@@ -66,7 +68,7 @@ class PermissibleDefaultWithGlobalCreatePerms(PermissibleDefaultPerms):
     """
 
     global_action_perm_map = {
-        "create": PermDef(["add"]),
+        "create": p(["add"]),
     }
 
     obj_action_perm_map = {
@@ -92,12 +94,12 @@ class PermissibleDefaultChildPerms(PermissibleCreateIfAuthPerms):
     """
 
     obj_action_perm_map = {
-        "create": [PermDef(["add_on"])],
-        "list": [PermDef(["view"])],
-        "retrieve": [PermDef(["view"])],
-        "update": [PermDef(["change_on"])],
-        "partial_update": [PermDef(["change_on"])],
-        "destroy": [PermDef(["change_on"])],
+        "create": [p(["add_on"])],
+        "list": [p(["view"])],
+        "retrieve": [p(["view"])],
+        "update": [p(["change_on"])],
+        "partial_update": [p(["change_on"])],
+        "destroy": [p(["change_on"])],
     }
 
     def get_root_perm_object(self, context=None) -> Optional[PermissibleMixin]:
@@ -129,12 +131,12 @@ class PermissibleSimpleChildPerms(PermissibleDefaultChildPerms):
     """
 
     obj_action_perm_map = {
-        "create": [PermDef(["change"], obj_getter="get_permissions_root_obj")],
-        "list": [PermDef(["view"], obj_getter="get_permissions_root_obj")],
-        "retrieve": [PermDef(["view"], obj_getter="get_permissions_root_obj")],
-        "update": [PermDef(["change"], obj_getter="get_permissions_root_obj")],
-        "partial_update": [PermDef(["change"], obj_getter="get_permissions_root_obj")],
-        "destroy": [PermDef(["change"], obj_getter="get_permissions_root_obj")],
+        "create": [p(["change"], obj_getter="get_permissions_root_obj")],
+        "list": [p(["view"], obj_getter="get_permissions_root_obj")],
+        "retrieve": [p(["view"], obj_getter="get_permissions_root_obj")],
+        "update": [p(["change"], obj_getter="get_permissions_root_obj")],
+        "partial_update": [p(["change"], obj_getter="get_permissions_root_obj")],
+        "destroy": [p(["change"], obj_getter="get_permissions_root_obj")],
     }
 
 

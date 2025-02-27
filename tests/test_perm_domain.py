@@ -22,7 +22,7 @@ class DummyDomain(PermDomain):
       - a ManyToManyField to the User model via DummyDomainMember.
 
     Also, we add a get_permission_codenames classmethod so that
-    PermDomainRole.reset_permissions_for_group can work.
+    PermDomainRole.reset_permissions can work.
     """
 
     name = models.CharField(max_length=100)
@@ -199,11 +199,11 @@ class PermDomainTests(TestCase):
     @patch("permissible.models.assign_perm")
     @patch("permissible.models.remove_perm")
     @patch("permissible.models.get_group_perms", return_value=set())
-    def test_reset_permissions_for_group(
+    def test_reset_permissions(
         self, mock_get_group_perms, mock_remove_perm, mock_assign_perm
     ):
         """
-        Test that reset_permissions_for_group (called from save())
+        Test that reset_permissions (called from save())
         uses guardian’s assign_perm to set permissions based on the role.
         (For role "view", DummyDomain.get_permission_codenames returns {"dummy_view"}).
         """
@@ -211,7 +211,7 @@ class PermDomainTests(TestCase):
         join_obj = DummyDomainRole.objects.get(dummydomain=domain, role="view")
         # (Changing the role to 'view' explicitly; it is already "view".)
         join_obj.role = "view"
-        join_obj.save()  # This calls reset_permissions_for_group internally.
+        join_obj.save()  # This calls reset_permissions internally.
         expected_perms = DummyDomain.get_permission_codenames(["view"])
         for perm in expected_perms:
             mock_assign_perm.assert_any_call(perm, join_obj.group, domain)

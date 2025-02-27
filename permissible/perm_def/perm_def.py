@@ -7,19 +7,7 @@ from typing import List, Type, Union, Optional, Callable
 
 from django.contrib.auth.models import PermissionsMixin
 
-
-class ShortPermsMixin(object):
-    @classmethod
-    def get_permission_codename(cls, short_permission, include_app_label=True):
-        app_label_prefix = f"{cls._meta.app_label}." if include_app_label else ""
-        return f"{app_label_prefix}{short_permission}_{cls._meta.model_name}"
-
-    @classmethod
-    def get_permission_codenames(cls, short_permissions, include_app_label=True):
-        return [
-            cls.get_permission_codename(sp, include_app_label)
-            for sp in short_permissions
-        ]
+from .short_perms import ShortPermsMixin
 
 
 class PermDef:
@@ -99,16 +87,17 @@ class PermDef:
     ):
         """ """
         # Try to get the necessary object (if object-level permissions, fail if no obj found)
-        obj = self.get_obj(obj=obj, context=context)
+        obj = self.get_obj_to_check(obj=obj, context=context)
         if must_check_obj and (not obj or not obj.pk):
             return False
 
         # Check the "condition checker"
         obj_check_passes = self.check_condition(obj=obj, user=user, context=context)
 
-        # No permissions to check - return True
+        # If short_perm_codes is None, we cannot pass permissions
+        # (note that if short_perm_codes is [], permissions WILL ALWAYS pass)
         if self.short_perm_codes is None:
-            has_perms = True
+            has_perms = False
         else:
             # Actually check permissions!
             perms = obj_class.get_permission_codenames(self.short_perm_codes)
@@ -120,7 +109,7 @@ class PermDef:
 
         return False
 
-    def get_obj(
+    def get_obj_to_check(
         self,
         obj: Optional[ShortPermsMixin],
         context=None,
@@ -168,9 +157,20 @@ class PermDef:
         # ...or checker function is a lambda
         return self.condition_checker(obj, user, context)
 
+    def __or__(self, other):
+        from .composite import CompositePermDef
 
-ALLOW_ALL = None
-DENY_ALL = []
+        if not isinstance(other, PermDef):
+            return NotImplemented
+        return CompositePermDef([self, other], "or")
 
-IS_AUTHENTICATED = PermDef(None, condition_checker=lambda o, u, c: bool(u.pk))
-IS_PUBLIC = PermDef(None, condition_checker=lambda o, u, c: o.is_public)
+    def __and__(self, other):
+        from .composite import CompositePermDef
+
+        if not isinstance(other, PermDef):
+            return NotImplemented
+        return CompositePermDef([self, other], "and")
+
+
+# Shorthand alias for the class
+p = PermDef

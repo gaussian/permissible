@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING, List, Literal, Type, Optional
 
 from django.contrib.auth.models import PermissionsMixin
 
+from permissible.perm_def import ShortPermsMixin, PermDef, CompositePermDef
 
 from .unretrieved_model_mixin import UnretrievedModelMixin
-from permissible.perm_def import ShortPermsMixin, PermDef
 
 
 class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
@@ -50,12 +50,8 @@ class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
     """
 
     # See description above
-    global_action_perm_map: dict[str, list[PermDef]] = {}
-    obj_action_perm_map: dict[str, list[PermDef]] = {}
-
-    # PermDef checking can be done in two modes: "ANY" or "ALL"
-    PermDefModeType = Literal["ANY", "ALL"]
-    perm_def_mode: PermDefModeType = "ANY"
+    global_action_perm_map: dict[str, PermDef | CompositePermDef] = {}
+    obj_action_perm_map: dict[str, PermDef | CompositePermDef] = {}
 
     @classmethod
     def has_global_permission(cls, user: PermissionsMixin, action: str, context=None):
@@ -86,8 +82,8 @@ class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
         if user and user.is_superuser:
             return True
 
-        perm_defs = cls.global_action_perm_map.get(action, None)
-        if perm_defs is None:
+        perm_def = cls.global_action_perm_map.get(action, None)
+        if perm_def is None:
             return True
 
         # Get the root class for permissions checks
@@ -96,23 +92,11 @@ class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
         assert root_perm_class, "No root permissions class found"
 
         # Check permissions on the ROOT class
-        for perm_def in perm_defs:
-            check_passes = perm_def.check_global(
-                obj_class=root_perm_class,
-                user=user,
-                context=context,
-            )
-            if cls.perm_def_mode == "ALL" and not check_passes:
-                return False
-            elif cls.perm_def_mode == "ANY" and check_passes:
-                return True
-
-        # If we reach here, and we're in "ALL" mode, then all checks passed
-        if cls.perm_def_mode == "ALL":
-            return True
-
-        # If we reach here, and we're in "ANY" mode, then no checks passed
-        return False
+        return perm_def.check_global(
+            obj_class=root_perm_class,
+            user=user,
+            context=context,
+        )
 
     def has_object_permission(self, user: PermissionsMixin, action: str, context=None):
         """
@@ -156,8 +140,8 @@ class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
 
         context = context or dict()
 
-        perm_defs = self.obj_action_perm_map.get(action, None)
-        if perm_defs is None:
+        perm_def = self.obj_action_perm_map.get(action, None)
+        if perm_def is None:
             return True
 
         # Get the root object for permissions checks
@@ -170,68 +154,11 @@ class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
             return False
 
         # Check permissions on the ROOT object
-        return room_perm_object.check_perm_defs(
-            mode=self.perm_def_mode,
+        return perm_def.check_obj(
+            obj=room_perm_object,
             user=user,
-            perm_defs=perm_defs,
             context=context,
         )
-
-    def check_perm_defs(
-        self,
-        mode: PermissibleMixin.PermDefModeType,
-        user: PermissionsMixin,
-        perm_defs: List[PermDef],
-        context=None,
-    ):
-        """
-        Check if the provided user can access this action for this object, by checking
-        the provided list of `PermDef` objects.
-
-        Override this function if you want to customize the permission check, eg like
-        in HierarchicalPermissibleMixin.
-        """
-        return PermissibleMixin.check_perm_defs_on_obj(
-            mode=mode,
-            obj=self,
-            user=user,
-            perm_defs=perm_defs,
-            context=context,
-        )
-
-    @staticmethod
-    def check_perm_defs_on_obj(
-        mode: PermissibleMixin.PermDefModeType,
-        obj: PermissibleMixin,
-        user: PermissionsMixin,
-        perm_defs: list[PermDef],
-        context=None,
-    ):
-        """
-        Check if the provided user can access this action for this object, by checking
-        the provided list of `PermDef` objects.
-
-        Only ONE of the provided `PermDef` objects must be satisfied to result in
-        permission success.
-        """
-        for perm_def in perm_defs:
-            check_passes = perm_def.check_obj(
-                obj=obj,
-                user=user,
-                context=context,
-            )
-
-            if mode == "ALL" and not check_passes:
-                return False
-            elif mode == "ANY" and check_passes:
-                return True
-
-        # If we reach here, and we're in "ALL" mode, then all checks passed
-        if mode == "ALL":
-            return True
-
-        # If we reach here, and we're in "ANY" mode, then no checks passed
-        return False
 
     def get_root_perm_object(self, context=None) -> Optional[PermissibleMixin]:
         """
@@ -289,57 +216,3 @@ class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
             for perm_map in perm_maps:
                 result[key] += perm_map.get(key, [])
         return result
-
-
-# class HierarchicalPermissibleMixin(PermissibleMixin, models.Model):
-#     """
-#     This is the same as PermissibleMixin, but additionally will check permissions
-#     all the way up a hierarchy of parent objects, following the parent field.
-
-#     In other words, the permissions check passes if ANY object in the hierarchy,
-#     including the original object, passes the permissions check. This makes sense
-#     because it's a hierarchy - parent object permissions should confer permissions
-#     to the children.
-#     """
-
-#     parent = models.ForeignKey(
-#         "self",
-#         related_name="children",
-#         on_delete=models.SET_NULL,
-#         null=True,
-#         blank=True,
-#     )
-
-#     class Meta:
-#         abstract = True
-
-#     def check_perm_defs(
-#         self,
-#         mode: PermissibleMixin.PermDefModeType,
-#         user: PermissionsMixin,
-#         perm_defs: List[PermDef],
-#         context=None,
-#     ):
-#         # Start with the original object
-#         obj_to_check = self
-
-#         # Iterate over objects, checking permissions and proceeding to parent,
-#         # until we reach the top (or until we pass the check, in which case we
-#         # would have returned True)
-#         while obj_to_check is not None:
-
-#             # Check permission on the current object, and return True if it passes
-#             if PermissibleMixin.check_perm_defs_on_obj(
-#                 mode=mode,
-#                 obj=obj_to_check,
-#                 user=user,
-#                 perm_defs=perm_defs,
-#                 context=context,
-#             ):
-#                 return True
-
-#             # If we don't pass, proceed to the parent object (but get unretrieved)
-#             obj_to_check = obj_to_check.get_unretrieved("parent")
-
-#         # If we reach here, no object in the hierarchy passed the check
-#         return False
