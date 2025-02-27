@@ -89,7 +89,7 @@ class PermDomain(BasePermDomain):
             self.get_role_join_rel().related_model
         )
 
-        print(f"Resetting permissions for PermDomain {self}")
+        # print(f"Resetting permissions for PermDomain {self}")
 
         # Create/update PermDomainRole for each role in possible roles
         role_choices = domain_role_model_class._meta.get_field("role").choices

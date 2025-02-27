@@ -61,7 +61,7 @@ def post_group_membership_changed(sender, action, instance, model, pk_set, **kwa
     # Split the affected Groups into the specific PermDomainMember models that they
     # relate to, and get the PermDomain ID for those Groups
     for domain_role_field in domain_role_fields:
-        domain_role_model_class = domain_role_field.related_model
+        domain_role_model_class: PermDomainRole = domain_role_field.related_model
         domain_id_field_name = domain_role_model_class.get_domain_field().attname
         domain_member_model_class = (
             domain_role_model_class.get_domain_member_model_class()
