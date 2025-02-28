@@ -59,6 +59,22 @@ class PermissibleMixin(PolicyLooupMixin, ShortPermsMixin, LazyModelResolverMixin
     obj_action_perm_map: dict[str, PermDef | CompositePermDef] = {}
 
     @classmethod
+    def get_global_perm_map(cls):
+        # Try to get the global action perm map from the policies.py file for this app
+        global_action_perm_map = cls.get_policies().get("global", None)
+        if global_action_perm_map is None:
+            global_action_perm_map = cls.global_action_perm_map
+        return global_action_perm_map
+
+    @classmethod
+    def get_object_perm_map(cls):
+        # Try to get the object action perm map from the policies.py file for this app
+        obj_action_perm_map = cls.get_policies().get("object", None)
+        if obj_action_perm_map is None:
+            obj_action_perm_map = cls.obj_action_perm_map
+        return obj_action_perm_map
+
+    @classmethod
     def has_global_permission(cls, user: PermissionsMixin, action: str, context=None):
         """
         Check if the provided user can access this action for this model, by checking
@@ -87,12 +103,7 @@ class PermissibleMixin(PolicyLooupMixin, ShortPermsMixin, LazyModelResolverMixin
         if user and user.is_superuser:
             return True
 
-        # Try to get the global action perm map from the policies.py file for this app
-        global_action_perm_map = cls.get_policies().get("global", None)
-        if global_action_perm_map is None:
-            global_action_perm_map = cls.global_action_perm_map
-
-        perm_def = global_action_perm_map.get(action, None)
+        perm_def = cls.get_global_perm_map.get(action, None)
         if perm_def is None:
             return True
 
@@ -140,11 +151,9 @@ class PermissibleMixin(PolicyLooupMixin, ShortPermsMixin, LazyModelResolverMixin
         """
 
         # Try to get the global action perm map from the policies.py file for this app
-        obj_action_perm_map = self.get_policies().get("object", None)
-        if obj_action_perm_map is None:
-            obj_action_perm_map = self.obj_action_perm_map
+        obj_action_perm_map = self.get_object_perm_map()
 
-        if not obj_action_perm_map and not self.get_policies().get("global", None):
+        if not obj_action_perm_map and not self.get_global_perm_map():
             raise NotImplementedError(
                 f"No permissions maps in `PermissibleMixin` or policies in policies.py, did you mean to define `obj_action_perm_map` on your model ({self.__class__})?"
             )

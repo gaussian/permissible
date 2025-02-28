@@ -8,6 +8,10 @@ from rest_framework import filters
 from rest_framework.exceptions import PermissionDenied
 from rest_framework_guardian.filters import ObjectPermissionsFilter
 
+from permissible.models.permissible_mixin import PermissibleMixin
+from permissible.perm_def.composite import CompositePermDef
+from permissible.permissions import PermissiblePerms
+
 
 class PermissibleFilter(ObjectPermissionsFilter):
     """
@@ -23,62 +27,112 @@ class PermissibleFilter(ObjectPermissionsFilter):
             return super().filter_queryset(request, queryset, view)
 
 
-class PermissibleRootFilter(filters.BaseFilterBackend):
+class ForceListPermissibleFilter(filters.BaseFilterBackend):
     """
-    For a defined set of fields on the view (`view.filter_perm_fields`),
-    check permission on each field AND filter down to that field.
+    Filter the queryset based on the first attribute in the attribute chain
+    of the `obj_getter` for the "list" action.
 
     e.g. for listable "survey questions", we might want to return those
     survey questions that are owned by "surveys" to which this user has
     access
 
-    NOTE: as with `PermissibleFilter`, we do not perform filtering for
-    detail routes (i.e. routes that retrieve a specific object).
+    Note that this filter is expected to work in conjunction with the permissions
+    framework. The "list" permissions will already have been checked by default
+    if you are using `PermissiblePerms`. Assertions guarantee that
+    `PermissiblePerms` is being used.
+
+    NOTE: we do not perform filtering for non-list routes
     """
 
     def filter_queryset(self, request, queryset, view):
-        if view.detail:
+        if view.action != "list":
             return queryset
 
-        assert hasattr(view, "filter_perm_fields"), \
-            "Badly configured view, need `filter_perm_fields`."
+        model_class = view.base_model
 
-        assert not any("__" in f for f in view.filter_perm_fields), \
-            f"Cannot yet accommodate joined fields in `PermissibleRootFilter`: {view.filter_perm_fields}"
+        assert issubclass(
+            model_class, PermissibleMixin
+        ), f"ForceListPermissibleFilter model ({model_class}) must be a subclass of PermissibleMixin"
 
-        # For each "permission" field, check permissions, then filter the queryset
-        for perm_filterset_fields, needed_short_perm_code in view.filter_perm_fields:
+        # Check that view has permission_classes with PermissiblePerms, OR
+        # if permission_classes is empty then check the default permission_classes
+        permission_classes = getattr(view, "permission_classes", [])
+        if permission_classes:
+            assert any(
+                [
+                    issubclass(permission, PermissiblePerms)
+                    for permission in permission_classes
+                ]
+            ), f"ForceListPermissibleFilter view ({view}) must have a permission class of PermissiblePerms"
+        else:
+            default_permission_classes = getattr(
+                settings, "REST_FRAMEWORK", dict()
+            ).get("DEFAULT_PERMISSION_CLASSES", [])
+            assert (
+                "permissible.permissions.PermissiblePerms" in default_permission_classes
+            ), f"ForceListPermissibleFilter view ({view}) must have a permission class of PermissiblePerms"
 
-            # Get related object (e.g. "Team" from "team_id"), nested if need be
-            model_class = queryset.model
-            related_obj = None
-            if not isinstance(perm_filterset_fields, (tuple, list)):
-                perm_filterset_fields = (perm_filterset_fields,)
-            field_for_filter, pk_for_filter = None, None
-            for i, perm_filterset_field in enumerate(perm_filterset_fields):
-                related_model = model_class._meta.get_field(perm_filterset_field).related_model
-                # First item - get the ID value from the query params object
-                if i == 0:
-                    related_pk = request.query_params.get(perm_filterset_field)
-                    field_for_filter = perm_filterset_field
-                    pk_for_filter = related_pk
-                # Not the first item, i.e. this is nested - get ID value by traversing the nesting
-                else:
-                    related_obj.refresh_from_db()
-                    related_pk = getattr(related_obj, perm_filterset_field)
-                related_obj = related_model(pk=related_pk)
-                model_class = related_model
+        # Get the PermDef for the "list" action
+        list_perm_def = model_class.get_object_perm_map().get("list", None)
 
-            # Check permission for related object
-            perm = f"{related_model._meta.app_label}.{needed_short_perm_code}_{related_model._meta.model_name}"
-            if not request.user.has_perm(perm, related_obj):
-                message = "Permission denied in filter"
-                if settings.DEBUG or settings.IS_TEST:
-                    message += f" - {perm}"
-                raise PermissionDenied(message)
+        # This PermDef must exist for us to find the first field in the attribute chain
+        assert (
+            list_perm_def
+        ), f"ForceListPermissibleFilter model ({model_class}) must have a PermDef for 'list'"
 
-            # Filter, but only by the first perm_filterset_field (`field_for_filter`,
-            # the one that is not nested) as we followed the chain of ownership
-            queryset = queryset.filter(**{field_for_filter: pk_for_filter})
+        # If composite, all of the PermDefs must be for the same field
+        if isinstance(list_perm_def, CompositePermDef):
+            perm_defs = list_perm_def.perm_defs
+        else:
+            perm_defs = [list_perm_def]
 
-        return queryset
+        # Get the string `obj_getter` for the PermDef(s)
+        obj_getters = [perm_def.obj_getter for perm_def in perm_defs]
+        str_obj_getters = [
+            obj_getter for obj_getter in obj_getters if isinstance(obj_getter, str)
+        ]
+
+        assert len(obj_getters) == len(
+            str_obj_getters
+        ), f"ForceListPermissibleFilter model ({model_class}) must have a string 'obj_getter' for all PermDefs for 'list'"
+
+        attr_paths = set(str_obj_getters)
+
+        assert (
+            len(attr_paths) == 1
+        ), f"ForceListPermissibleFilter model ({model_class}) must have the same 'obj_getter' for all PermDefs for 'list'"
+
+        # Now check that first item in the attribute chain (and turn it into the actual
+        # key, eg "team_id" instead of "team")
+        attr_path = attr_paths.pop()
+        first_attr = attr_path.split(".")[0]
+        first_attr_field = getattr(model_class, first_attr).field
+        first_attr_key = first_attr_field.attname
+
+        # filterset_class = getattr(view, "filterset_class", None)
+        # filterset_fields = getattr(filterset_class, "filterset_fields", None)
+
+        # Ensure view is configured correctly (attribute key is in the filter)
+        # if filterset_class:
+        #     assert getattr(
+        #         filterset_class, first_attr_key, None
+        #     ), f"ForceListPermissibleFilter filterset class ({filterset_class}) must have a field '{first_attr_key}'"
+        # elif filterset_fields:
+        #     assert (
+        #         first_attr_key in filterset_fields
+        #     ), f"ForceListPermissibleFilter filterset fields ({filterset_fields}) must have a field '{first_attr_key}'"
+        # else:
+        #     assert (
+        #         filterset_class or filterset_fields
+        #     ), f"ForceListPermissibleFilter view ({view}) must have a 'filterset_class' or 'filterset_fields'"
+
+        # Lastly, check that the attribute key is in the query params
+        first_attr_value = request.query_params.get(first_attr_key)
+        if not first_attr_value:
+            raise PermissionDenied(
+                f"ForceListPermissibleFilter query params must have a key '{first_attr_key}'"
+            )
+
+        # Filter the queryset down just to be sure
+        # TODO: this isn't necessary, but it's to be doubly sure!
+        return queryset.filter(**{first_attr_key: first_attr_value})
