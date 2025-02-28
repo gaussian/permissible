@@ -1,5 +1,5 @@
 """
-Tests for the UnretrievedModelMixin functionality.
+Tests for the LazyModelResolverMixin functionality.
 """
 
 from unittest import mock
@@ -7,7 +7,7 @@ from unittest import mock
 from django.db import models
 from django.test import TestCase
 
-from permissible.models.unretrieved_model_mixin import UnretrievedModelMixin
+from permissible.perm_def.model_resolver import LazyModelResolverMixin
 
 
 # Mock models for testing
@@ -18,7 +18,7 @@ class Team(models.Model):
         app_label = "test_app"
 
 
-class Experiment(UnretrievedModelMixin, models.Model):
+class Experiment(LazyModelResolverMixin, models.Model):
     name = models.CharField(max_length=100)
     team = models.ForeignKey(Team, on_delete=models.CASCADE)
 
@@ -26,7 +26,7 @@ class Experiment(UnretrievedModelMixin, models.Model):
         app_label = "test_app"
 
 
-class ChainerSession(UnretrievedModelMixin, models.Model):
+class ChainerSession(LazyModelResolverMixin, models.Model):
     name = models.CharField(max_length=100)
     experiment = models.ForeignKey(Experiment, on_delete=models.CASCADE)
 
@@ -34,7 +34,7 @@ class ChainerSession(UnretrievedModelMixin, models.Model):
         app_label = "test_app"
 
 
-class Question(UnretrievedModelMixin, models.Model):
+class Question(LazyModelResolverMixin, models.Model):
     text = models.CharField(max_length=200)
     chainer_session = models.ForeignKey(
         ChainerSession, on_delete=models.CASCADE, null=True
@@ -44,8 +44,8 @@ class Question(UnretrievedModelMixin, models.Model):
         app_label = "test_app"
 
 
-class UnretrievedModelMixinTest(TestCase):
-    """Tests for the UnretrievedModelMixin."""
+class LazyModelResolverMixinTest(TestCase):
+    """Tests for the LazyModelResolverMixin."""
 
     def setUp(self):
         """Set up test data."""

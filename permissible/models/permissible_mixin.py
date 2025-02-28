@@ -11,13 +11,17 @@ from typing import TYPE_CHECKING, List, Literal, Type, Optional
 
 from django.contrib.auth.models import PermissionsMixin
 
-from permissible.perm_def import ShortPermsMixin, PermDef, CompositePermDef
+from permissible.perm_def import (
+    ShortPermsMixin,
+    LazyModelResolverMixin,
+    PermDef,
+    CompositePermDef,
+)
 
 from .policy_lookup import PolicyLooupMixin
-from .unretrieved_model_mixin import UnretrievedModelMixin
 
 
-class PermissibleMixin(PolicyLooupMixin, ShortPermsMixin, UnretrievedModelMixin):
+class PermissibleMixin(PolicyLooupMixin, ShortPermsMixin, LazyModelResolverMixin):
     """
     Model mixin that allows a model to check permissions, in accordance with
     simple dictionaries (`global_action_perm_map` and `obj_action_perm_map`)

@@ -3,7 +3,7 @@ from typing import Any, Optional, Type, Union
 from django.db import models
 
 
-class UnretrievedModelMixin(object):
+class LazyModelResolverMixin(object):
     """
     Mixin to allow a model to retrieve an *unretrieved* model instance for a
     dot-separated chain of foreign keys, using exactly one DB query if multi-level,

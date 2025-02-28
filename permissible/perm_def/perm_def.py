@@ -7,7 +7,12 @@ from typing import List, Type, Union, Optional, Callable
 
 from django.contrib.auth.models import PermissionsMixin
 
+from .model_resolver import LazyModelResolverMixin
 from .short_perms import ShortPermsMixin
+
+
+class BaseObj(ShortPermsMixin, LazyModelResolverMixin):
+    pass
 
 
 class PermDef:
@@ -24,7 +29,7 @@ class PermDef:
         self,
         short_perm_codes: Optional[List[str]],
         obj_getter: Optional[
-            Union[Callable[[object, object], Optional[ShortPermsMixin]], str]
+            Union[Callable[[object, object], Optional[BaseObj]], str]
         ] = None,
         condition_checker: Optional[
             Union[Callable[[object, object, object], bool], str]
@@ -47,7 +52,7 @@ class PermDef:
 
     def check_global(
         self,
-        obj_class: Type[ShortPermsMixin],
+        obj_class: Type[BaseObj],
         user: PermissionsMixin,
         context=None,
     ):
@@ -64,7 +69,7 @@ class PermDef:
 
     def check_obj(
         self,
-        obj: ShortPermsMixin,
+        obj: BaseObj,
         user: PermissionsMixin,
         context=None,
     ):
@@ -82,8 +87,8 @@ class PermDef:
     def _check(
         self,
         must_check_obj: bool,
-        obj: Optional[ShortPermsMixin],
-        obj_class: Type[ShortPermsMixin],
+        obj: Optional[BaseObj],
+        obj_class: Type[BaseObj],
         user: PermissionsMixin,
         context=None,
     ):
@@ -113,9 +118,9 @@ class PermDef:
 
     def get_obj_to_check(
         self,
-        obj: Optional[ShortPermsMixin],
+        obj: Optional[BaseObj],
         context=None,
-    ) -> Optional[ShortPermsMixin]:
+    ) -> Optional[BaseObj]:
         """
         Using the provided object and context, return the actual object for which we will
         be checking permissions.
