@@ -35,7 +35,7 @@ class UnretrievedModelMixin(object):
         A model instance with the correct primary key (but not fetched from the DB) or None
         if the primary key is null or if the query returns a number of results != 1.
         """
-        res = self._resolve_chain(attr_key)
+        res = self.resolve_chain(attr_key)
         final_model_class = res["final_model_class"]
 
         root_field = res["root_field"]
@@ -84,11 +84,11 @@ class UnretrievedModelMixin(object):
         Example:
         If attr_key is "experiment.team", this property returns the Team model class.
         """
-        res = cls._resolve_chain(attr_key)
+        res = cls.resolve_chain(attr_key)
         return res["final_model_class"]
 
     @classmethod
-    def _resolve_chain(cls, attr_key: str) -> dict[str, Any]:
+    def resolve_chain(cls, attr_key: str) -> dict[str, Any]:
         """
         Traverse a dot-separated chain of foreign key attributes and return a dictionary
         with all details needed to either directly construct the final model instance or
@@ -171,7 +171,7 @@ class UnretrievedModelMixin(object):
     @classmethod
     def make_objs_from_data(
         cls, obj_dict_or_list: Union[dict, list[dict]]
-    ) -> Union[models.Model, list[models.Model]]:
+    ) -> list[models.Model]:
         """
         Turn data (usually request.data) into a model object (or a list of model
         objects). Allows multiple objects to be built.
@@ -210,7 +210,7 @@ class UnretrievedModelMixin(object):
         return obj
 
     @classmethod
-    def make_dummy_obj_from_query_params(cls, param_dict: dict) -> object:
+    def make_unretrieved_obj_from_query_params(cls, param_dict: dict) -> object:
         """
         Turn query parameters (usually request.query_params) into a dummy object.
 

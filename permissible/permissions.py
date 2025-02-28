@@ -3,8 +3,15 @@
 Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Type
+
 from django.http import Http404
 from rest_framework import permissions
+
+if TYPE_CHECKING:
+    from permissible.models import PermissibleMixin
 
 
 class PermissiblePerms(permissions.DjangoObjectPermissions):
@@ -37,7 +44,7 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
         ):
             return False
 
-        model_class = self._queryset(view).model
+        model_class: Type[PermissibleMixin] = self._queryset(view).model
         perm_check_kwargs = {
             "user": request.user,
             "action": view.action,
@@ -53,7 +60,9 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
             return self.has_object_permission(
                 request=request,
                 view=view,
-                obj=model_class.make_dummy_obj_from_query_params(request.query_params),
+                obj=model_class.make_unretrieved_obj_from_query_params(
+                    request.query_params
+                ),
             )
         elif not view.detail:
             # For other actions that have no instance (i.e. detail=False, e.g. "create"),

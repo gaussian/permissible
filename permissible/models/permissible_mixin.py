@@ -13,10 +13,11 @@ from django.contrib.auth.models import PermissionsMixin
 
 from permissible.perm_def import ShortPermsMixin, PermDef, CompositePermDef
 
+from .policy_lookup import PolicyLooupMixin
 from .unretrieved_model_mixin import UnretrievedModelMixin
 
 
-class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
+class PermissibleMixin(PolicyLooupMixin, ShortPermsMixin, UnretrievedModelMixin):
     """
     Model mixin that allows a model to check permissions, in accordance with
     simple dictionaries (`global_action_perm_map` and `obj_action_perm_map`)
@@ -82,7 +83,12 @@ class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
         if user and user.is_superuser:
             return True
 
-        perm_def = cls.global_action_perm_map.get(action, None)
+        # Try to get the global action perm map from the policies.py file for this app
+        global_action_perm_map = cls.get_policies().get("global", None)
+        if global_action_perm_map is None:
+            global_action_perm_map = cls.global_action_perm_map
+
+        perm_def = global_action_perm_map.get(action, None)
         if perm_def is None:
             return True
 
@@ -128,10 +134,15 @@ class PermissibleMixin(ShortPermsMixin, UnretrievedModelMixin):
         :param context:
         :return:
         """
-        if not self.global_action_perm_map and not self.obj_action_perm_map:
+
+        # Try to get the global action perm map from the policies.py file for this app
+        obj_action_perm_map = self.get_policies().get("object", None)
+        if obj_action_perm_map is None:
+            obj_action_perm_map = self.obj_action_perm_map
+
+        if not obj_action_perm_map and not self.get_policies().get("global", None):
             raise NotImplementedError(
-                "No permissions maps in `PermissibleMixin`, did you mean to define "
-                "`obj_action_perm_map` on your model?"
+                f"No permissions maps in `PermissibleMixin` or policies in policies.py, did you mean to define `obj_action_perm_map` on your model ({self.__class__})?"
             )
 
         # Superusers override

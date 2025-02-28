@@ -33,8 +33,10 @@ class PermDef:
         """
         Initialize.
         :param short_perm_codes: A list of short permission codes, e.g. ["view", "change"]
-        :param obj_getter: A function/str that takes an initial object and returns the obj to check
-        object, e.g. a "survey" might be the object to check for "survey question" objects
+        :param obj_getter: A function that takes an initial object and returns the obj to check
+        object, e.g. a "survey" might be the object to check for "survey question" objects, OR
+        a string that is a path of attributes to get the object from the initial object,
+        excluding the initial clas (e.g. "survey.project.team" for a Question model)
         :param condition_checker: A function/str that takes an object, the user, and additional
         context, and returns a boolean, which is AND'd with the result of user.has_perms to
         return whether permission is successful
@@ -128,7 +130,7 @@ class PermDef:
             # Getter function is a string (member of object)...
             if isinstance(self.obj_getter, str):
                 assert obj, "Object must be provided to get object from"
-                return getattr(obj, self.obj_getter)(context)
+                return obj.get_unretrieved(self.obj_getter)
 
             # ...or getter function is a lambda
             return self.obj_getter(obj, context)
