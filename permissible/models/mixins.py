@@ -5,19 +5,11 @@ from permissible.perm_def import ALLOW_ALL, DENY_ALL, IS_AUTHENTICATED, p
 from .permissible_mixin import PermissibleMixin
 
 
-class PermissibleRejectGlobalPermissionsMixin(PermissibleMixin):
-    @classmethod
-    def get_room_perm_class(cls, context=None) -> PermissibleMixin:
-        raise AssertionError(
-            "No global permissions allowed, make sure `global_action_perm_map` is empty"
-        )
-
-
-class PermissibleCreateIfAuthPerms(PermissibleMixin):
+class PermissibleListIfAuthPerms(PermissibleMixin):
     global_action_perm_map = {"list": IS_AUTHENTICATED}
 
 
-class PermissibleDenyPerms(PermissibleCreateIfAuthPerms):
+class PermissibleDenyPerms(PermissibleListIfAuthPerms):
     """
     A default configuration of permissions that denies all standard DRF actions
     on objects, and denies object listing to unauthenticated users.
@@ -25,7 +17,7 @@ class PermissibleDenyPerms(PermissibleCreateIfAuthPerms):
     Note that no global checks are done.
     Note that no "list" permission checks are done (permissions checks should
     instead be done on the actual object, in the "list" action, via
-    `permissible.ForceListPermissibleFilter`).
+    `permissible.PermissibleDirectFilter`).
     """
 
     obj_action_perm_map = {
@@ -37,7 +29,7 @@ class PermissibleDenyPerms(PermissibleCreateIfAuthPerms):
     }
 
 
-class PermissibleDefaultPerms(PermissibleCreateIfAuthPerms):
+class PermissibleDefaultPerms(PermissibleListIfAuthPerms):
     """
     A default configuration of permissions that ONLY checks for object-level
     permissions on the object that we are trying to access.

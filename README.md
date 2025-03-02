@@ -46,7 +46,7 @@ django-guardian.)
 Here, we add the `PermissibleMixin` to each model we want to protect, and
 define "permissions maps" that define what permissions are needed for each action
 that is taken on an object in the model (e.g. a "retrieve" action on a "survey").
-(We can also use classes like `PermissibleDefaultPerms` to define good default
+(We can also use classes like `??????????????` to define good default
 permission maps for our models.)
 
 With the permissions configured, now we can force different views to use them:
@@ -125,7 +125,7 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
 - Add `PermissibleMixin` to any model you want to protect
 - Define `global_action_perm_map` and `obj_action_perm_map` on each model, otherwise
   use mixins in `permissible.models.permission_mixin` that define them out of the
-  box (eg `PermissibleDenyPerms`, `PermissibleDefaultPerms`)
+  box (eg `????????????`, `????????????????`)
   - If defining `global_action_perm_map` and `obj_action_perm_map` on your own,
     remember that (just like Django's permission checking normally) both global
     and object permissions must pass

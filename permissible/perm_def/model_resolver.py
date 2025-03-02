@@ -185,11 +185,18 @@ class LazyModelResolverMixin(object):
         :return: models.Model object (or list of such objects)
         """
         if isinstance(obj_dict_or_list, list):
-            return [cls._make_obj_from_data(obj_dict=d) for d in obj_dict_or_list]
-        return [cls._make_obj_from_data(obj_dict=obj_dict_or_list)]
+            return [cls.make_obj_from_data(obj_dict=d) for d in obj_dict_or_list]
+        return [cls.make_obj_from_data(obj_dict=obj_dict_or_list)]
 
     @classmethod
-    def _make_obj_from_data(cls, obj_dict: dict) -> models.Model:
+    def make_obj_from_data(cls, obj_dict: dict) -> models.Model:
+        """
+        Turn data (usually request.data) into a model object. This finds fields
+        in the data that are valid fields for the model, and creates an object
+        with those fields.
+
+        No validation is done, and no database queries are made.
+        """
         valid_fields = [
             f
             for f in cls._meta.get_fields()

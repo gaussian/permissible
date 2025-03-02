@@ -7,12 +7,7 @@ from typing import List, Type, Union, Optional, Callable
 
 from django.contrib.auth.models import PermissionsMixin
 
-from .model_resolver import LazyModelResolverMixin
-from .short_perms import ShortPermsMixin
-
-
-class BaseObj(ShortPermsMixin, LazyModelResolverMixin):
-    pass
+from .base import BasePermDefObj
 
 
 class PermDef:
@@ -29,7 +24,7 @@ class PermDef:
         self,
         short_perm_codes: Optional[List[str]],
         obj_getter: Optional[
-            Union[Callable[[object, object], Optional[BaseObj]], str]
+            Union[Callable[[object, object], Optional[BasePermDefObj]], str]
         ] = None,
         condition_checker: Optional[
             Union[Callable[[object, object, object], bool], str]
@@ -52,7 +47,7 @@ class PermDef:
 
     def check_global(
         self,
-        obj_class: Type[BaseObj],
+        obj_class: Type[BasePermDefObj],
         user: PermissionsMixin,
         context=None,
     ):
@@ -69,7 +64,7 @@ class PermDef:
 
     def check_obj(
         self,
-        obj: BaseObj,
+        obj: BasePermDefObj,
         user: PermissionsMixin,
         context=None,
     ):
@@ -87,8 +82,8 @@ class PermDef:
     def _check(
         self,
         must_check_obj: bool,
-        obj: Optional[BaseObj],
-        obj_class: Type[BaseObj],
+        obj: Optional[BasePermDefObj],
+        obj_class: Type[BasePermDefObj],
         user: PermissionsMixin,
         context=None,
     ):
@@ -98,13 +93,21 @@ class PermDef:
         if must_check_obj and (not obj or not obj.pk):
             return False
 
-        # Check the "condition checker"
+        # Check the "condition checker" (and fail if it does not pass)
         obj_check_passes = self.check_condition(obj=obj, user=user, context=context)
+        if not obj_check_passes:
+            return False
 
         # If short_perm_codes is None, we cannot pass permissions
-        # (note that if short_perm_codes is [], permissions WILL ALWAYS pass)
         if self.short_perm_codes is None:
             return False
+
+        # If short_perm_codes is [] (empty), permissions WILL ALWAYS pass
+        # (this is useful for objects that are always public, or when we
+        # want to check a condition eg "is authenticated" earlier without
+        # checking permissions)
+        if len(self.short_perm_codes) == 0:
+            return True
 
         # Actually check permissions!
         perms = obj_class.get_permission_codenames(self.short_perm_codes)
@@ -118,9 +121,9 @@ class PermDef:
 
     def get_obj_to_check(
         self,
-        obj: Optional[BaseObj],
+        obj: Optional[BasePermDefObj],
         context=None,
-    ) -> Optional[BaseObj]:
+    ) -> Optional[BasePermDefObj]:
         """
         Using the provided object and context, return the actual object for which we will
         be checking permissions.
@@ -132,7 +135,7 @@ class PermDef:
         # Getter function is set - use it
         if self.obj_getter:
 
-            # Getter function is a string (member of object)...
+            # Getter function is a string (i.e. a chain of attributes)...
             if isinstance(self.obj_getter, str):
                 assert obj, "Object must be provided to get object from"
                 return obj.get_unretrieved(self.obj_getter)

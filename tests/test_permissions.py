@@ -1,6 +1,6 @@
 import unittest
 from django.http import Http404
-from permissible.permissions import PermissiblePerms, PermissiblePermsUnauthAllowed
+from permissible.permissions import PermissiblePerms
 
 # Pseudocode:
 # 1. Create dummy classes to simulate request, user, view, queryset, model and object behavior.
@@ -21,9 +21,8 @@ from permissible.permissions import PermissiblePerms, PermissiblePermsUnauthAllo
 #    - Test that global permission being False causes has_permission to return False.
 #    - Test the list action, ensuring that has_object_permission is evaluated on a dummy object.
 #    - Test non-detail actions (e.g., create) with multiple dummy objects.
-#    - Test for PermissiblePermsUnauthAllowed that unauthenticated users are processed.
 #
-# 4. Write tests in unittest and use absolute imports of PermissiblePerms and PermissiblePermsUnauthAllowed.
+# 4. Write tests in unittest and use absolute imports of PermissiblePerms.
 
 
 # Dummy classes for testing
@@ -115,17 +114,6 @@ class TestPermissiblePerms(unittest.TestCase):
         result = perms.has_permission(request, view)
         self.assertTrue(result)
 
-    def test_unauthenticated_denied_when_required(self):
-        # When user is not authenticated and permission requires authentication, it should return False.
-        user = DummyUser(is_authenticated=False)
-        view = DummyView(action="retrieve", detail=True)
-        request = DummyRequest(user=user)
-        perms = self.get_permission_instance(PermissiblePerms)
-        # In has_permission, if user is not authenticated and authenticated_users_only is True
-        # (default in PermissiblePerms), then return False.
-        result = perms.has_permission(request, view)
-        self.assertFalse(result)
-
     def test_global_permission_false(self):
         # Authenticated user but global permission check fails should return False.
         DummyModel.global_permission = False
@@ -169,25 +157,13 @@ class TestPermissiblePerms(unittest.TestCase):
         result = perms.has_permission(request, view)
         self.assertFalse(result)
 
-
-class TestPermissiblePermsUnauthAllowed(unittest.TestCase):
-
-    def setUp(self):
-        DummyModel.global_permission = True
-
-    def get_permission_instance(self, permission_class):
-        instance = permission_class()
-        # Monkey-patch _queryset to return DummyQuerySet
-        instance._queryset = lambda view: DummyQuerySet()
-        return instance
-
     def test_unauthenticated_allowed_but_checked(self):
         # For PermissiblePermsUnauthAllowed, unauthenticated users are processed
         # through the permission check and can be approved
         user = DummyUser(is_authenticated=False)
         view = DummyView(action="retrieve", detail=True)
         request = DummyRequest(user=user)
-        perms = self.get_permission_instance(PermissiblePermsUnauthAllowed)
+        perms = self.get_permission_instance(PermissiblePerms)
         # In PermissiblePermsUnauthAllowed, authenticated_users_only is False,
         # so the unauthenticated user will be processed through the permission check.
         # Since our DummyModel.global_permission is True, the result should be True.
@@ -200,7 +176,7 @@ class TestPermissiblePermsUnauthAllowed(unittest.TestCase):
         user = DummyUser(is_authenticated=False)
         view = DummyView(action="retrieve", detail=True)
         request = DummyRequest(user=user)
-        perms = self.get_permission_instance(PermissiblePermsUnauthAllowed)
+        perms = self.get_permission_instance(PermissiblePerms)
         result = perms.has_permission(request, view)
         self.assertFalse(result)
 
@@ -209,7 +185,7 @@ class TestPermissiblePermsUnauthAllowed(unittest.TestCase):
         user = DummyUser(is_authenticated=False)
         view = DummyView(action="retrieve", detail=True, ignore=True)
         request = DummyRequest(user=user)
-        perms = self.get_permission_instance(PermissiblePermsUnauthAllowed)
+        perms = self.get_permission_instance(PermissiblePerms)
         result = perms.has_permission(request, view)
         self.assertTrue(result)
 

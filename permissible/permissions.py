@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from permissible.models import PermissibleMixin
 
 
-class PermissiblePerms(permissions.DjangoObjectPermissions):
+class PermissiblePerms(permissions.BasePermission):
     """
     Restricts DRF access to on an object using advanced configuration.
 
@@ -22,27 +22,33 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
     the necessary permissions should be configured using `global_action_perm_map`
     and `obj_action_perm_map` from that mixin.
 
+    Must pass global AND object permissions.
+
     Requires use of an object-level permissions library/schema such as
     django-guardian.
 
     NOTE: much is copied from `permissions.DjangoObjectPermissions`.
     """
 
-    # This is not used, unlike in `permissions.DjangoObjectPermissions`, because
-    # we instead define a perms map in the model class (`action_perm_map`), via the
-    # `PermissibleMixin` class
-    perms_map = {}
-
     def has_permission(self, request, view):
+        """
+        Global permissions check (i.e. not object specific). Runs for all
+        actions.
+
+        Return `True` if permission is granted, `False` otherwise.
+
+        All permissions checks (including this) must pass for permission to
+        be granted.
+        """
+
+        assert getattr(
+            request, "user", None
+        ), "User object must be available in request for PermissiblePerms"
+
         # Workaround to ensure DjangoModelPermissions are not applied
         # to the root view when using DefaultRouter.
         if getattr(view, "_ignore_model_permissions", False):
             return True
-
-        if not request.user or (
-            not request.user.is_authenticated and self.authenticated_users_only
-        ):
-            return False
 
         model_class: Type[PermissibleMixin] = self._queryset(view).model
         perm_check_kwargs = {
@@ -50,8 +56,14 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
             "action": view.action,
             "context": {"request": request},
         }
+
+        # Check if user has permission to do this action on this model type
         if not model_class.has_global_permission(**perm_check_kwargs):
             return False
+
+        # Global permission check suceeeded - but now do additional checks for
+        # "list" (or list-like) actions and "create" action, as these have no
+        # instance and so will NOT call `has_object_permission` below
         list_actions = getattr(view, "LIST_ACTIONS", ("list",))
         if view.action in list_actions:
             # For list actions, as they have no instance and also contain no true
@@ -76,15 +88,31 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
         return True
 
     def has_object_permission(self, request, view, obj):
-        # authentication checks have already executed via has_permission
+        """
+        Object-specific permissions check. Runs for any actions where the
+        primary key is present (e.g. "retrieve", "update", "destroy").
+
+        Return `True` if permission is granted, `False` otherwise.
+
+        All permissions checks (including this AND `has_permission` above)
+        must pass for permission to be granted.
+        """
+
+        assert getattr(
+            request, "user", None
+        ), "User object must be available in request for PermissiblePerms"
+
         queryset = self._queryset(view)
         model_cls = queryset.model
         user = request.user
         context = {"request": request}
 
+        # Check if user has permission to do this action on this object
         if not obj.has_object_permission(
             user=user, action=view.action, context=context
         ):
+            # PERMISSION CHECK FAILED
+
             # If user is not authenticated (if self.authenticated_users_only = False),
             # then return False to raise a 403 (instead of 404 per the logic below)
             if not user.is_authenticated:
@@ -113,24 +141,3 @@ class PermissiblePerms(permissions.DjangoObjectPermissions):
             return False
 
         return True
-
-
-class PermissiblePermsUnauthAllowed(PermissiblePerms):
-    """
-    Same as `PermissiblePerms`, but allowing unauthenticated users to have their
-    permissions checked. This does NOT give unauthenticated users immediate
-    access - they still need to pass the permission checks - but it does
-    not automatically deny all unauthenticated users (like `PermissiblePerms`
-    does).
-
-    Models that are to be protected in this way should use `PermissibleMixin`, and
-    the necessary permissions should be configured using `global_action_perm_map`
-    and `obj_action_perm_map` from that mixin.
-
-    Requires use of an object-level permissions library/schema such as
-    django-guardian.
-
-    NOTE: much is copied from `permissions.DjangoObjectPermissions`.
-    """
-
-    authenticated_users_only = False

@@ -6,53 +6,84 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 from django.conf import settings
 from rest_framework import filters
 from rest_framework.exceptions import PermissionDenied
-from rest_framework_guardian.filters import ObjectPermissionsFilter
+from rest_framework_guardian.filters import (
+    ObjectPermissionsFilter,
+)
 
 from permissible.models.permissible_mixin import PermissibleMixin
-from permissible.perm_def.composite import CompositePermDef
 from permissible.permissions import PermissiblePerms
 
 
-class PermissibleFilter(ObjectPermissionsFilter):
+class PermissibleDirectFilter(ObjectPermissionsFilter):
     """
-    Same as django-rest-framework-guardian's `ObjectPermissionsFilter`,
-    but does not perform filtering for detail routes (i.e. routes that
-    retrieve a specific object).
-    """
+    A filter backend that limits results to those where the requesting user
+    has read object level permissions. Use this when the model we are filtering
+    CONTAINS ITS PERMISSIONS, e.g. a Team model that directly has permissions.
 
-    def filter_queryset(self, request, queryset, view):
-        if view.detail:
-            return queryset
-        else:
-            return super().filter_queryset(request, queryset, view)
-
-
-class ForceListPermissibleFilter(filters.BaseFilterBackend):
-    """
-    Filter the queryset based on the first attribute in the attribute chain
-    of the `obj_getter` for the "list" action.
-
-    e.g. for listable "survey questions", we might want to return those
-    survey questions that are owned by "surveys" to which this user has
-    access
+    Mostly same as django-rest-framework-guardian's `ObjectPermissionsFilter`.
 
     Note that this filter is expected to work in conjunction with the permissions
     framework. The "list" permissions will already have been checked by default
     if you are using `PermissiblePerms`. Assertions guarantee that
     `PermissiblePerms` is being used.
 
-    NOTE: we do not perform filtering for non-list routes
+    NOTE: we do not perform filtering for detail routes.
     """
 
     def filter_queryset(self, request, queryset, view):
-        if view.action != "list":
+        if view.detail:
             return queryset
 
         model_class = view.base_model
 
         assert issubclass(
             model_class, PermissibleMixin
-        ), f"ForceListPermissibleFilter model ({model_class}) must be a subclass of PermissibleMixin"
+        ), f"PermissibleDirectFilter model ({model_class}) must be a subclass of PermissibleMixin"
+
+        return super().filter_queryset(request, queryset, view)
+
+
+class PermissibleIndirectFilter(filters.BaseFilterBackend):
+    """
+    Filter the queryset indirectly according to policies. This is unlike the
+    direct approach above, because in this case, the models we are filtering
+    do NOT CONTAIN THEIR PERMISSIONS, e.g. a Survey model may depend on the
+    permissions on the Team that owns it.
+
+    Filtering is based on the "filters" in the ACTION_POLICIES of the model
+    class, e.g. for a model class "surveys.Survey" owned by its Survey.project,
+    we might have the following:
+
+    ```
+    ACTION_POLICIES = {
+        "surveys.Survey": {
+            "filters": ["project"],
+            ...
+        },
+    }
+    ```
+
+    Note that this filter is expected to work in conjunction with the permissions
+    framework. The "list" permissions will already have been checked by default
+    if you are using `PermissiblePerms`. Assertions guarantee that
+    `PermissiblePerms` is being used.
+
+    THIS FILTER DOES NOT CHECK PERMISSIONS OR FILTER DOWN TO PERMITTED OBJECTS,
+    instead it relies on the ACTION_POLICIES being correctly configured to
+    check permissions.
+
+    NOTE: we do not perform filtering for detail routes.
+    """
+
+    def filter_queryset(self, request, queryset, view):
+        if view.detail:
+            return queryset
+
+        model_class = view.base_model
+
+        assert issubclass(
+            model_class, PermissibleMixin
+        ), f"PermissibleDirectFilter model ({model_class}) must be a subclass of PermissibleMixin"
 
         # Check that view has permission_classes with PermissiblePerms, OR
         # if permission_classes is empty then check the default permission_classes
@@ -63,76 +94,42 @@ class ForceListPermissibleFilter(filters.BaseFilterBackend):
                     issubclass(permission, PermissiblePerms)
                     for permission in permission_classes
                 ]
-            ), f"ForceListPermissibleFilter view ({view}) must have a permission class of PermissiblePerms"
+            ), f"PermissibleDirectFilter view ({view}) must have a permission class of PermissiblePerms"
         else:
             default_permission_classes = getattr(
                 settings, "REST_FRAMEWORK", dict()
             ).get("DEFAULT_PERMISSION_CLASSES", [])
             assert (
                 "permissible.permissions.PermissiblePerms" in default_permission_classes
-            ), f"ForceListPermissibleFilter view ({view}) must have a permission class of PermissiblePerms"
+            ), f"PermissibleDirectFilter view ({view}) must have a permission class of PermissiblePerms"
 
-        # Get the PermDef for the "list" action
-        list_perm_def = model_class.get_object_perm_map().get("list", None)
-
-        # This PermDef must exist for us to find the first field in the attribute chain
+        # Get the required filter field attributes for this model
+        filter_field_attrs = model_class.get_filters()
         assert (
-            list_perm_def
-        ), f"ForceListPermissibleFilter model ({model_class}) must have a PermDef for 'list'"
+            filter_field_attrs
+        ), f"PermissibleDirectFilter model ({model_class}) must have a 'filters' attribute in the apporiate place under ACTION_POLICIES"
 
-        # If composite, all of the PermDefs must be for the same field
-        if isinstance(list_perm_def, CompositePermDef):
-            perm_defs = list_perm_def.perm_defs
-        else:
-            perm_defs = [list_perm_def]
-
-        # Get the string `obj_getter` for the PermDef(s)
-        obj_getters = [perm_def.obj_getter for perm_def in perm_defs]
-        str_obj_getters = [
-            obj_getter for obj_getter in obj_getters if isinstance(obj_getter, str)
+        # Get the actual keys in the query params from these filter fields
+        filter_field_keys = [
+            getattr(model_class, field_attr).field.attname
+            for field_attr in filter_field_attrs
         ]
 
-        assert len(obj_getters) == len(
-            str_obj_getters
-        ), f"ForceListPermissibleFilter model ({model_class}) must have a string 'obj_getter' for all PermDefs for 'list'"
+        # Get the keys that are actually in the query params
+        available_filter_field_keys = [
+            key for key in filter_field_keys if key in request.query_params
+        ]
 
-        attr_paths = set(str_obj_getters)
-
-        assert (
-            len(attr_paths) == 1
-        ), f"ForceListPermissibleFilter model ({model_class}) must have the same 'obj_getter' for all PermDefs for 'list'"
-
-        # Now check that first item in the attribute chain (and turn it into the actual
-        # key, eg "team_id" instead of "team")
-        attr_path = attr_paths.pop()
-        first_attr = attr_path.split(".")[0]
-        first_attr_field = getattr(model_class, first_attr).field
-        first_attr_key = first_attr_field.attname
-
-        # filterset_class = getattr(view, "filterset_class", None)
-        # filterset_fields = getattr(filterset_class, "filterset_fields", None)
-
-        # Ensure view is configured correctly (attribute key is in the filter)
-        # if filterset_class:
-        #     assert getattr(
-        #         filterset_class, first_attr_key, None
-        #     ), f"ForceListPermissibleFilter filterset class ({filterset_class}) must have a field '{first_attr_key}'"
-        # elif filterset_fields:
-        #     assert (
-        #         first_attr_key in filterset_fields
-        #     ), f"ForceListPermissibleFilter filterset fields ({filterset_fields}) must have a field '{first_attr_key}'"
-        # else:
-        #     assert (
-        #         filterset_class or filterset_fields
-        #     ), f"ForceListPermissibleFilter view ({view}) must have a 'filterset_class' or 'filterset_fields'"
-
-        # Lastly, check that the attribute key is in the query params
-        first_attr_value = request.query_params.get(first_attr_key)
-        if not first_attr_value:
-            raise PermissionDenied(
-                f"ForceListPermissibleFilter query params must have a key '{first_attr_key}'"
+        # Make sure at least one of the filter field keys is in the query params
+        if len(available_filter_field_keys) == 0:
+            print(
+                f"PermissibleDirectFilter query params must have one of the keys {filter_field_keys}: {request.query_params}"
             )
+            raise PermissionDenied("Permission denied in filter")
 
-        # Filter the queryset down just to be sure
-        # TODO: this isn't necessary, but it's to be doubly sure!
-        return queryset.filter(**{first_attr_key: first_attr_value})
+        # Lastly, filter the queryset down for each of the available filter field keys
+        for key in available_filter_field_keys:
+            value = request.query_params.get(key)
+            queryset = queryset.filter(**{key: value})
+
+        return queryset
