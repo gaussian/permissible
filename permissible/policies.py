@@ -44,6 +44,18 @@ POLICY_AUTHENTICATED = {
     "destroy": IS_AUTHENTICATED,
 }
 
+# POLICY: Allows all standard DRF actions on objects to authenticated
+# users, but restricts object creation to authenticated users who have
+# the "add" permission. Use this for global permissions.
+POLICY_CREATE_RESTRICTED = {
+    "create": p(["add"]),
+    "list": IS_AUTHENTICATED,
+    "retrieve": IS_AUTHENTICATED,
+    "update": IS_AUTHENTICATED,
+    "partial_update": IS_AUTHENTICATED,
+    "destroy": IS_AUTHENTICATED,
+}
+
 # POLICY: Denies all standard DRF actions on objects, and denies
 # object listing to unauthenticated users.
 POLICY_DENY_ALL = {
@@ -60,7 +72,7 @@ POLICY_DENY_ALL = {
 # update, and deletion if the user has the appropriate permissions.
 POLICY_DEFAULT_NO_CREATE = {
     "create": DENY_ALL,
-    "list": IS_AUTHENTICATED,
+    "list": p(["view"]),
     "retrieve": p(["view"]),
     "update": p(["change"]),
     "partial_update": p(["change"]),
@@ -70,9 +82,11 @@ POLICY_DEFAULT_NO_CREATE = {
 # POLICY: Default permissions for a model. Allows listing of objects
 # if the user is authenticated. Allows object retrieval, update, partial
 # update, and deletion if the user has the appropriate permissions.
+# Use as object permissions together with
+# `POLICY_CREATE_RESTRICTED` for global permissions.
 POLICY_DEFAULT_ALLOW_CREATE = {
     "create": ALLOW_ALL,
-    "list": IS_AUTHENTICATED,
+    "list": p(["view"]),
     "retrieve": p(["view"]),
     "update": p(["change"]),
     "partial_update": p(["change"]),
@@ -88,6 +102,22 @@ POLICY_DEFAULT_GLOBAL = {
     "update": p(["change"]),
     "partial_update": p(["change"]),
     "destroy": p(["delete"]),
+}
+
+# FULL POLICY: Default permissions for a model. This defers to object
+# permissions for all actions, except for "create", which is allowed
+# if the user has the "add" permission globally. Only authenticated
+# users are allowed for all actions.
+FULL_POLICY_DEFAULT = {
+    "global": POLICY_CREATE_RESTRICTED,
+    "object": POLICY_DEFAULT_ALLOW_CREATE,
+}
+
+# FULL POLICY: No object-level permissions are checked, only global.
+# Authenticated users only.
+FULL_POLICY_GLOBAL_ONLY = {
+    "global": POLICY_DEFAULT_GLOBAL,
+    "object": POLICY_NO_RESTRICTION,
 }
 
 

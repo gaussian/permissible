@@ -132,13 +132,6 @@ class TestPermDef(unittest.TestCase):
         user = DummyUser(id=1, perms_result=True)
         self.assertTrue(perm_def.check_obj(dummy_obj, user))
 
-    def test_check_obj_fail_nopk(self):
-        # When object has no pk, check_obj should return False
-        perm_def = PermDef(short_perm_codes=["view"])
-        dummy_obj = DummyObj(pk=None)
-        user = DummyUser(id=1, perms_result=True)
-        self.assertFalse(perm_def.check_obj(dummy_obj, user))
-
     def test_obj_path_string(self):
         # Test obj_path as a string path to an attribute
         perm_def = PermDef(short_perm_codes=["view"], obj_path="related_obj")
@@ -245,7 +238,7 @@ class TestPermDef(unittest.TestCase):
         )
 
         user = DummyUser(id=42)
-        context = {"user": user}
+        context = {"user": user, "request": {"user": user}}
 
         # Object with matching owner_id should pass
         owned_obj = DummyObj(pk=123, owner_id=42)

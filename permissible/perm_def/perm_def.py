@@ -138,19 +138,14 @@ class PermDef:
             obj_pk = context.get(self.key_to_obj_in_context)
             obj_class = apps.get_model(self.model_label)
             obj = obj_class.objects.get(pk=obj_pk)
+            if not obj or not obj.pk:
+                return False
+
         # ...or get by following the attribute path from the input object
         elif self.obj_path:
-
             obj = obj.get_unretrieved(self.obj_path)
-        # ...otherwise, if there is no persisted object to check permissions
-        # for (i.e. no primary key), then permission granted, because nothing
-        # to fail on
-        elif not obj.pk:
-            return True
-
-        # Fail if no object found
-        if not obj or not obj.pk:
-            return False
+            if not obj or not obj.pk:
+                return False
 
         # Check object conditions
         if not self._check_obj_filter(obj, context):
@@ -337,6 +332,8 @@ class PermDef:
         assert obj or obj_class, "Either obj or obj_class must be provided"
         obj_class = obj_class or obj.__class__
         assert obj_class
+
+        assert not obj or hasattr(obj, "pk"), "The object must have a primary key."
 
         # In some cases we don't even need to check perms
         perm_precheck = self._pre_check_perms()

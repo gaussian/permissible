@@ -479,7 +479,7 @@ class PermDomainTests(TestCase):
         test_user.id = 123
 
         # Create an empty context
-        context = {"user": test_user}
+        context = {"user": test_user, "request": {"user": test_user}}
 
         # Create an object filter that uses the context
         obj_filter = ("user_id", "==", "_context.request.user.id")

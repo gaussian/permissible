@@ -161,6 +161,7 @@ class TestPermissibleMixin(unittest.TestCase):
     def setUp(self):
         """Set up test data"""
         self.test_model = TestModel(id=1, name="Test Object")
+        self.test_model._state.adding = False
         self.related_model = RelatedModel(
             id=2, name="Related Object", test_model=self.test_model
         )
