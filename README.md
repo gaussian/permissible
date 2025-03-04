@@ -36,7 +36,7 @@ any other place you use PermissibleMixin).
 
 # Features
 
-## Feature 1: Consistent permissions configuration
+## Feature 1: Consistent, policy-based permissions configuration
 
 In its simplest form, `permissible` can be used just for its permissions
 configuration. This has no impact on your database, and does not rely on any
@@ -44,10 +44,26 @@ particular object-level permissions library. (It does require one; we prefer
 django-guardian.)
 
 Here, we add the `PermissibleMixin` to each model we want to protect, and
-define "permissions maps" that define what permissions are needed for each action
+define policies for ach that define what permissions are needed for each action
 that is taken on an object in the model (e.g. a "retrieve" action on a "survey").
-(We can also use classes like `??????????????` to define good default
-permission maps for our models.)
+
+Policies are defined in a `policies.py`, in a dict called `ACTION_POLICIES`, eg:
+```
+ACTION_POLICIES = {
+    "surveys.Survey": {
+        "global": {
+            "list": NO_RESTRICTION,
+            "retrieve": NO_RESTRICTION,
+            ...
+        },
+        "object": {
+            "list": p(["view"]),
+            "retrieve": p(["view"]),
+            ...
+        },
+    }
+}
+```
 
 With the permissions configured, now we can force different views to use them:
 - If you would like the permissions to work for API views (via
@@ -84,11 +100,27 @@ and has a `ForeignKey` to the domain model - and defines `ROLE_DEFINITIONS`
 and has a `ForeignKey` to the domain model (this model automatically adds and
 removes records when a user is a member of the appropriate `PermDomainRole`)
 
-Then, use **`DomainOwnedPermMixin`** on any models
+Then, set up the `ACTION_POLICIES` appropriately. For instance, for a model class
+"surveys.Survey" owned by its Survey.project.team, we might have the following:
+```
+ACTION_POLICIES = {
+    "surveys.Survey": {
+        "global": {
+            "list": NO_RESTRICTION,
+            "retrieve": NO_RESTRICTION,
+            ...
+        },
+        "object": {
+            "list": p(["view_on"], "project.team"),
+            "retrieve": p(["view_on"], "project.team"),
+            ...
+        },
+    }
+}
 
-You can then simply adjust your permissions maps in `PermissibleMixin` to
-incorporate checking of the domain model for permissions. See the documentation for
-`PermDef` and `PermissibleMixin.has_object_permissions` for info and examples.
+You can adjust `ACTION_POLICIES` to incorporate checking of the domain model for
+permissions. See the documentation for `PermDef` and
+`PermissibleMixin.has_object_permissions` for info and examples.
 
 Remember: `PermDomain` is the core model on which roles are defined (eg Project or
 Team) and `PermDomainRole` is the model that represents a single role (and

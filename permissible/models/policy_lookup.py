@@ -33,16 +33,22 @@ class PolicyLooupMixin:
     @lru_cache(maxsize=None)
     def get_policies(cls) -> dict:
         """
-        Return the policies module for the app where the model is defined.
+        Return the policies for this model from the app's ACTION_POLICIES.
         """
+        # Get policies module
         module = cls.get_app_policies_module()
         if not module:
             return {}
 
+        # Get ACTION_POLICIES
         policies = getattr(module, "ACTION_POLICIES", None)
         if not policies:
             return {}
 
+        # Get the full model name for lookup
         full_model_name = f"{cls._meta.app_label}.{cls._meta.model_name}"
 
-        return policies.get(full_model_name, {})
+        # Return empty dict if model not in policies
+        return policies.get(
+            full_model_name, {}
+        ).copy()  # Return a copy to avoid cache issues

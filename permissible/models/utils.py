@@ -2,11 +2,11 @@ from typing import Type
 from django.contrib.auth.models import Group
 
 from permissible.models.permissible_mixin import PermissibleMixin
-from permissible.perm_def import ShortPermsMixin
+from permissible.perm_def import BasePermDefObj
 
 
 def update_permissions_for_object(
-    obj: ShortPermsMixin,
+    obj: BasePermDefObj,
     group: Group,
     short_perm_codes,
 ):

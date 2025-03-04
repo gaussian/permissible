@@ -403,28 +403,6 @@ class PermDomainMember(
     class Meta:
         abstract = True
 
-    # Permissions:
-    # All actions have perm_def_admin, which gives permissions to those who have
-    # the "change_permission" permission on the associated PermDomain object.
-    # All actions besides "destroy" have perm_def_self, which gives permissions
-    # to the user who is the user field of this PermDomainMember.
-    perm_def_self = PermDef(
-        None,
-        condition_checker=lambda o, u, c: o.user_id == u.id,
-    )
-    perm_def_admin = PermDef(
-        ["change_permission"],
-        # This is joined user (unretrieved)
-        obj_getter=lambda o, c: o.get_unretrieved("user"),
-    )
-    perm_defs_both = [perm_def_self, perm_def_admin]
-    obj_action_perm_map = {
-        "retrieve": perm_defs_both,
-        "update": perm_defs_both,
-        "partial_update": perm_defs_both,
-        "destroy": [perm_def_admin],
-    }
-
     def __str__(self):
         domain_field = self.get_domain_field()
         domain_obj = getattr(self, domain_field.name)

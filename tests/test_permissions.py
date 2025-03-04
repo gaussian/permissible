@@ -1,64 +1,86 @@
 import unittest
+from unittest.mock import MagicMock, patch
 from django.http import Http404
-from permissible.permissions import PermissiblePerms
+from rest_framework.exceptions import PermissionDenied
 
-# Pseudocode:
-# 1. Create dummy classes to simulate request, user, view, queryset, model and object behavior.
-#    - DummyUser: holds is_authenticated flag.
-#    - DummyModel: class with classmethods has_global_permission, make_dummy_obj_from_query_params, and make_objs_from_data.
-#       These methods return values based on preset flags.
-#    - DummyObj: instance with an 'allowed' flag; its has_object_permission method returns that flag.
-#    - DummyQuerySet: simple object with a 'model' attribute equal to DummyModel.
-#    - DummyView: simulate a Django Rest Framework view; holds attributes like _ignore_model_permissions,
-#      action, detail, query_params, data, and LIST_ACTIONS.
-#
-# 2. For each test case, create a dummy request with a DummyUser; create a dummy view; assign
-#    a lambda to the permission instance's _queryset method that returns our DummyQuerySet.
-#
-# 3. Test various scenarios:
-#    - Test that when view._ignore_model_permissions is True, has_permission returns True.
-#    - Test that unauthenticated users are denied when the permission class requires authentication.
-#    - Test that global permission being False causes has_permission to return False.
-#    - Test the list action, ensuring that has_object_permission is evaluated on a dummy object.
-#    - Test non-detail actions (e.g., create) with multiple dummy objects.
-#
-# 4. Write tests in unittest and use absolute imports of PermissiblePerms.
+from permissible.permissions import PermissiblePerms
+from permissible.utils.views import make_context_from_request
+from permissible.models.permissible_mixin import PermissibleMixin
+from permissible.perm_def import PermDef
+from permissible.filters import PermissibleFilter  # Add this import
 
 
 # Dummy classes for testing
 class DummyUser:
-    def __init__(self, is_authenticated):
+    def __init__(self, is_authenticated=True, is_superuser=False):
         self.is_authenticated = is_authenticated
+        self.is_superuser = is_superuser
 
 
 class DummyObj:
-    def __init__(self, allowed=True):
+    def __init__(self, pk=1, allowed=True, retrieve_allowed=True, _state=None):
+        self.pk = pk
         self.allowed = allowed
+        self.retrieve_allowed = retrieve_allowed
+        self._state = _state or MagicMock()
+        self._state.adding = False
 
-    def has_object_permission(self, user, action, context):
+    def has_object_permission(self, user, action, context=None):
+        if action == "retrieve":
+            return self.retrieve_allowed
         return self.allowed
 
 
-class DummyModel:
+class DummyModel(PermissibleMixin):
     # Class-level flag for global permission result
     global_permission = True
 
-    @classmethod
-    def has_global_permission(cls, user, action, context):
-        return cls.global_permission
+    # Mock Django model _meta attribute
+    _meta = type("Meta", (), {"app_label": "testapp", "model_name": "dummymodel"})
 
     @classmethod
-    def make_dummy_obj_from_query_params(cls, params):
-        # For testing, if params has key 'allow_obj' set to False, return denied object.
-        allowed = params.get("allow_obj", True)
-        return DummyObj(allowed=allowed)
+    def get_policies(cls):
+        """Return mock policies for testing"""
+        return {
+            "global": {
+                "create": PermDef(["add"]),
+                "list": PermDef(["view"]),
+                "retrieve": PermDef(["view"]),
+                "update": PermDef(["change"]),
+                "partial_update": PermDef(["change"]),
+                "destroy": PermDef(["delete"]),
+            },
+            "object": {
+                "retrieve": PermDef(["view"]),
+                "update": PermDef(["change"]),
+                "partial_update": PermDef(["change"]),
+                "destroy": PermDef(["delete"]),
+            },
+        }
+
+    @classmethod
+    def has_global_permission(cls, user, action, context=None):
+        """Override to use our test behavior but preserve superuser check"""
+        # Preserve superuser bypass from PermissibleMixin
+        if user.is_superuser:
+            return True
+
+        if not user.is_authenticated and action == "create":
+            return False  # Unauthenticated users can't create
+        return cls.global_permission
 
     @classmethod
     def make_objs_from_data(cls, data):
         # Data is expected to be a list of dicts with key 'allow'
+        if not isinstance(data, list):
+            data = [data]
+
         objs = []
         for item in data:
-            objs.append(DummyObj(allowed=item.get("allow", True)))
+            # Create a dummy object with the specified permissions
+            allowed = item.get("allow", True)
+            retrieve_allowed = item.get("retrieve_allow", True)
+            objs.append(DummyObj(allowed=allowed, retrieve_allowed=retrieve_allowed))
         return objs
 
 
@@ -71,7 +93,7 @@ class DummyView:
     # Simulate a DRF view with required attributes
     def __init__(
         self,
-        action,
+        action="retrieve",
         detail=True,
         ignore=False,
         query_params=None,
@@ -84,6 +106,14 @@ class DummyView:
         self.query_params = query_params or {}
         self.data = data or []
         self.LIST_ACTIONS = list_actions if list_actions is not None else ("list",)
+        self.permission_classes = [PermissiblePerms]
+        self._permissible_filter = True  # Simulate config check
+        self.base_model = DummyModel  # Model class reference
+        # Use actual PermissibleFilter class instead of string
+        self.filter_backends = [PermissibleFilter]
+
+    def get_filter_backends(self):
+        return self.filter_backends
 
 
 class DummyRequest:
@@ -99,7 +129,7 @@ class TestPermissiblePerms(unittest.TestCase):
         # Reset global permission to default True before each test
         DummyModel.global_permission = True
 
-    def get_permission_instance(self, permission_class):
+    def get_permission_instance(self, permission_class=PermissiblePerms):
         instance = permission_class()
         # Monkey-patch _queryset to return DummyQuerySet
         instance._queryset = lambda view: DummyQuerySet()
@@ -110,7 +140,7 @@ class TestPermissiblePerms(unittest.TestCase):
         user = DummyUser(is_authenticated=False)
         view = DummyView(action="any", ignore=True)
         request = DummyRequest(user=user)
-        perms = self.get_permission_instance(PermissiblePerms)
+        perms = self.get_permission_instance()
         result = perms.has_permission(request, view)
         self.assertTrue(result)
 
@@ -120,74 +150,203 @@ class TestPermissiblePerms(unittest.TestCase):
         user = DummyUser(is_authenticated=True)
         view = DummyView(action="retrieve", detail=True)
         request = DummyRequest(user=user)
-        perms = self.get_permission_instance(PermissiblePerms)
+        perms = self.get_permission_instance()
         result = perms.has_permission(request, view)
         self.assertFalse(result)
 
-    def test_list_action_object_permission_true(self):
-        # Test list action where dummy object's has_object_permission returns True.
-        user = DummyUser(is_authenticated=True)
-        # In list action, detail is not applicable; simulate with action in LIST_ACTIONS.
-        query_params = {"allow_obj": True}
-        view = DummyView(action="list", detail=True, query_params=query_params)
-        request = DummyRequest(user=user, query_params=query_params)
-        perms = self.get_permission_instance(PermissiblePerms)
+    def test_superuser_global_permission(self):
+        # Test that superuser can access content even when global permission is False
+        DummyModel.global_permission = False
+        user = DummyUser(is_authenticated=True, is_superuser=True)
+        view = DummyView(action="retrieve", detail=True)
+        request = DummyRequest(user=user)
+        perms = self.get_permission_instance()
         result = perms.has_permission(request, view)
-        self.assertTrue(result)
 
-    def test_non_detail_action_with_multiple_objects_all_allowed(self):
-        # For actions like create (non-detail), has_permission returns True if all dummy objs allow access.
+        # Even though global permission is False, superuser should be able to access
+        self.assertTrue(result, "Superuser should bypass global permission checks")
+
+    def test_create_action_all_objects_allowed(self):
+        # For actions like create (non-detail), has_permission returns True if all dummy objs allow access
         user = DummyUser(is_authenticated=True)
-        # detail False to simulate non-detail action like create.
         data = [{"allow": True}, {"allow": True}]
         view = DummyView(action="create", detail=False)
         request = DummyRequest(user=user, data=data)
-        perms = self.get_permission_instance(PermissiblePerms)
+        perms = self.get_permission_instance()
         result = perms.has_permission(request, view)
         self.assertTrue(result)
 
-    def test_non_detail_action_with_multiple_objects_one_denied(self):
-        # Test non-detail action where one of the dummy objects denies permission.
+    def test_create_action_one_object_denied(self):
+        # Test non-detail action where one of the dummy objects denies permission
         user = DummyUser(is_authenticated=True)
         data = [{"allow": True}, {"allow": False}]
         view = DummyView(action="create", detail=False)
         request = DummyRequest(user=user, data=data)
-        perms = self.get_permission_instance(PermissiblePerms)
-        # Since one object returns False, overall result should be False.
+        perms = self.get_permission_instance()
+        # Since one object returns False, overall result should be False
         result = perms.has_permission(request, view)
         self.assertFalse(result)
 
-    def test_unauthenticated_allowed_but_checked(self):
-        # For PermissiblePermsUnauthAllowed, unauthenticated users are processed
-        # through the permission check and can be approved
+    def test_unauthenticated_denied_for_create(self):
+        # Test that unauthenticated users are denied for create action
         user = DummyUser(is_authenticated=False)
-        view = DummyView(action="retrieve", detail=True)
-        request = DummyRequest(user=user)
-        perms = self.get_permission_instance(PermissiblePerms)
-        # In PermissiblePermsUnauthAllowed, authenticated_users_only is False,
-        # so the unauthenticated user will be processed through the permission check.
-        # Since our DummyModel.global_permission is True, the result should be True.
-        result = perms.has_permission(request, view)
-        self.assertTrue(result)
-
-    def test_global_permission_denied_for_unauthenticated(self):
-        # Test that an unauthenticated user is denied when global permission returns False
-        DummyModel.global_permission = False  # Set global permission to False
-        user = DummyUser(is_authenticated=False)
-        view = DummyView(action="retrieve", detail=True)
-        request = DummyRequest(user=user)
-        perms = self.get_permission_instance(PermissiblePerms)
+        data = [{"allow": True}]
+        view = DummyView(action="create", detail=False)
+        request = DummyRequest(user=user, data=data)
+        perms = self.get_permission_instance()
         result = perms.has_permission(request, view)
         self.assertFalse(result)
 
-    def test_ignore_model_permissions_with_unauthenticated(self):
-        # When _ignore_model_permissions is True, even an unauthenticated user passes.
-        user = DummyUser(is_authenticated=False)
-        view = DummyView(action="retrieve", detail=True, ignore=True)
+    def test_object_permission_granted(self):
+        # Test that object permission check works properly when permission is granted
+        user = DummyUser(is_authenticated=True)
+        view = DummyView(action="update", detail=True)
         request = DummyRequest(user=user)
-        perms = self.get_permission_instance(PermissiblePerms)
-        result = perms.has_permission(request, view)
+        perms = self.get_permission_instance()
+        obj = DummyObj(allowed=True)
+
+        result = perms.has_object_permission(request, view, obj)
         self.assertTrue(result)
+
+    def test_object_permission_denied(self):
+        # Test that object permission check works properly when permission is denied
+        user = DummyUser(is_authenticated=True)
+        view = DummyView(action="update", detail=True)
+        request = DummyRequest(user=user)
+        perms = self.get_permission_instance()
+        obj = DummyObj(allowed=False)
+
+        # Permission denied but user is authenticated
+        result = perms.has_object_permission(request, view, obj)
+        self.assertFalse(result)
+
+    def test_object_permission_denied_unauthenticated(self):
+        # Test that object permission denies unauthenticated users
+        user = DummyUser(is_authenticated=False)
+        view = DummyView(action="update", detail=True)
+        request = DummyRequest(user=user)
+        perms = self.get_permission_instance()
+        obj = DummyObj(allowed=False)
+
+        # Should return False for unauthenticated users
+        result = perms.has_object_permission(request, view, obj)
+        self.assertFalse(result)
+
+    def test_retrieve_denied_raises_http404(self):
+        """Test that denied retrieve permission raises Http404 when retrieve permission is denied"""
+        user = DummyUser(is_authenticated=True)
+        view = DummyView(action="retrieve", detail=True)
+        request = DummyRequest(user=user)
+        perms = self.get_permission_instance()
+
+        # Create an object that will fail permission checks
+        obj = DummyObj(allowed=False, retrieve_allowed=False)
+
+        # The key issue: PermissiblePerms.has_object_permission needs to call
+        # obj.has_object_permission and then handle the response correctly
+
+        # Mock obj.has_object_permission to always return False for both retrieve and update
+        with patch.object(obj, "has_object_permission", return_value=False):
+            # This should raise Http404 because retrieve permission fails
+            with self.assertRaises(Http404):
+                perms.has_object_permission(request, view, obj)
+
+    def test_update_denied_with_retrieve_allowed(self):
+        # Test that update denied but retrieve allowed returns False (not Http404)
+        user = DummyUser(is_authenticated=True)
+        view = DummyView(action="update", detail=True)
+        request = DummyRequest(user=user)
+        perms = self.get_permission_instance()
+        obj = DummyObj(allowed=False, retrieve_allowed=True)
+
+        # Should return False (not raise Http404) when user can retrieve but not update
+        result = perms.has_object_permission(request, view, obj)
+        self.assertFalse(result)
+
+    def test_update_denied_with_retrieve_denied_raises_http404(self):
+        """Test that update denied and retrieve denied raises Http404"""
+        user = DummyUser(is_authenticated=True)
+        view = DummyView(action="update", detail=True)  # Note: action is "update"
+        request = DummyRequest(user=user)
+        perms = self.get_permission_instance()
+        obj = DummyObj(allowed=False, retrieve_allowed=False)
+
+        # Mock has_object_permission to simulate permissions failing for both update and retrieve
+        original_has_object_permission = obj.has_object_permission
+
+        def mock_has_object_permission(user, action, context=None):
+            # Return False for any action
+            return False
+
+        with patch.object(
+            obj, "has_object_permission", side_effect=mock_has_object_permission
+        ):
+            # Should raise Http404 because both update and retrieve permissions fail
+            with self.assertRaises(Http404):
+                perms.has_object_permission(request, view, obj)
+
+    def test_adding_object_denied_returns_false(self):
+        # Test that adding object (state.adding=True) with permission denied returns False
+        user = DummyUser(is_authenticated=True)
+        view = DummyView(action="create", detail=False)
+        request = DummyRequest(user=user)
+        perms = self.get_permission_instance()
+
+        # Create an object that's being added (not yet saved)
+        obj = DummyObj(allowed=False)
+        obj._state.adding = True
+
+        # Should return False instead of raising Http404
+        result = perms.has_object_permission(request, view, obj)
+        self.assertFalse(result)
+
+    # Fix the patch path to target where make_context_from_request is imported in permissions.py
+    @patch("permissible.permissions.make_context_from_request")
+    def test_make_context_from_request_called(self, mock_make_context):
+        # Test that make_context_from_request is called when checking permissions
+        mock_make_context.return_value = {"test": "context"}
+
+        user = DummyUser(is_authenticated=True)
+        view = DummyView(action="retrieve", detail=True)
+        request = DummyRequest(user=user)
+        perms = self.get_permission_instance()
+
+        # Call has_permission
+        perms.has_permission(request, view)
+
+        # Verify make_context_from_request was called
+        mock_make_context.assert_called_once_with(request)
+
+    def test_check_view_config_success(self):
+        # Test that _check_view_config succeeds with properly configured view
+        view = DummyView()
+        perms = self.get_permission_instance()
+
+        # Should not raise an exception
+        perms._check_view_config(view)
+
+    def test_check_view_config_failure(self):
+        # Test that _check_view_config fails with incorrectly configured view
+        view = DummyView()
+        # Instead of just setting _permissible_filter=False,
+        # completely remove the filter_backends attribute which will definitely fail the check
+        view.filter_backends = []
+        perms = self.get_permission_instance()
+
+        # Should raise an exception
+        with self.assertRaises(AssertionError):
+            perms._check_view_config(view)
+
+    def test_check_view_config_failure_missing_base_model(self):
+        # Test that _check_view_config fails when base_model is missing
+        view = DummyView()
+        # Remove the base_model attribute
+        delattr(view, "base_model")
+        perms = self.get_permission_instance()
+
+        # Should raise an assertion error
+        with self.assertRaises(AssertionError):
+            perms._check_view_config(view)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,7 @@
 import unittest
+from unittest.mock import MagicMock, patch
+from django.db.models.query import QuerySet
+
 from permissible.perm_def import PermDef
 from permissible.perm_def.composite import CompositePermDef
 from permissible.perm_def.short_perms import ShortPermsMixin
@@ -15,16 +18,55 @@ class DummyUser:
         return self.perms_result
 
 
-class DummyObj(ShortPermsMixin):
-    _meta = type("Meta", (), {"app_label": "testapp", "model_name": "dummy"})
+# Mock manager class for queryset operations
+class MockManager:
+    def __get__(self, obj, objtype=None):
+        manager = MagicMock()
+        manager.all.return_value = manager
+        manager.filter.return_value = manager
+        manager.exclude.return_value = manager
+        manager.values_list.return_value = [1, 2, 3]
+        manager.none.return_value = MagicMock(spec=QuerySet)
+        return manager
 
-    def __init__(self, pk, allowed=True):
+
+class DummyShortPermsMixin:
+    @classmethod
+    def get_permission_codenames(cls, short_perm_codes, include_app_label=True):
+        if short_perm_codes is None:
+            return []
+        app_label = "testapp" if include_app_label else ""
+        prefix = f"{app_label}." if app_label else ""
+        return [f"{prefix}{code}_dummy" for code in short_perm_codes]
+
+
+class DummyObj(DummyShortPermsMixin):
+    _meta = type("Meta", (), {"app_label": "testapp", "model_name": "dummy"})
+    objects = MockManager()
+
+    def __init__(self, pk, allowed=True, **kwargs):
         self.pk = pk
         self.allowed = allowed
+        for key, val in kwargs.items():
+            setattr(self, key, val)
 
-    # Example method for string-based condition checking
-    def can_do(self, user, context):
-        return True
+    def get_unretrieved(self, path):
+        parts = path.split(".")
+        current = self
+        for part in parts:
+            if hasattr(current, part):
+                current = getattr(current, part)
+            else:
+                return None
+        return current
+
+    @classmethod
+    def get_unretrieved_class(cls, path):
+        return cls
+
+    @classmethod
+    def resolve_chain(cls, path):
+        return {"final_model_class": cls, "query_path": path.replace(".", "__")}
 
 
 class TestCompositePermDef(unittest.TestCase):
@@ -34,10 +76,19 @@ class TestCompositePermDef(unittest.TestCase):
         """Set up test fixtures."""
         self.dummy_obj = DummyObj(pk=123)
         self.user = DummyUser(id=1)
+        self.context = {"test_key": "test_value"}
 
         # Create basic permission definitions for testing
-        self.true_perm = PermDef(["view"], condition_checker=lambda o, u, c: True)
-        self.false_perm = PermDef(["view"], condition_checker=lambda o, u, c: False)
+        self.true_perm = PermDef(
+            short_perm_codes=["view"], global_condition_checker=lambda u, c: True
+        )
+        self.false_perm = PermDef(
+            short_perm_codes=["view"], global_condition_checker=lambda u, c: False
+        )
+        self.path_perm = PermDef(short_perm_codes=["view"], obj_path="related")
+        self.filter_perm = PermDef(
+            short_perm_codes=["view"], obj_filter=("status", "==", "public")
+        )
 
     def test_composite_or_check_obj(self):
         """Test OR composite behavior for object checks."""
@@ -184,6 +235,118 @@ class TestCompositePermDef(unittest.TestCase):
         """Test that CompositePermDef raises ValueError for invalid operators."""
         with self.assertRaises(ValueError):
             CompositePermDef([self.true_perm, self.false_perm], "invalid_operator")
+
+    @patch("guardian.shortcuts.get_objects_for_user")
+    def test_composite_or_filter_queryset(self, mock_get_objects_for_user):
+        # Let's simplify this test to focus on the core behavior
+        queryset = MagicMock(spec=QuerySet)
+        queryset.model = DummyObj
+
+        # Create our result querysets
+        result1 = MagicMock(spec=QuerySet)
+        result2 = MagicMock(spec=QuerySet)
+        final_result = MagicMock(spec=QuerySet)
+
+        # Configure the mocks
+        mock_get_objects_for_user.side_effect = [result1, result2]
+        result1.union.return_value = final_result
+
+        # Create the composite
+        composite = CompositePermDef([self.true_perm, self.path_perm], "or")
+
+        # Run the filter_queryset method
+        result = composite.filter_queryset(queryset, self.user, self.context)
+
+        # Verify the result - we just want to check if union was called
+        self.assertEqual(result1.union.call_count, 1)
+        self.assertEqual(result, final_result)
+
+    @patch("guardian.shortcuts.get_objects_for_user")
+    def test_composite_and_filter_queryset(self, mock_get_objects_for_user):
+        # Set up test data
+        queryset = MagicMock(spec=QuerySet)
+        queryset.model = DummyObj
+
+        # Create our result querysets
+        result1 = MagicMock(spec=QuerySet)
+        result2 = MagicMock(spec=QuerySet)
+        final_result = MagicMock(spec=QuerySet)
+
+        # Configure the mocks - use intersection instead of __and__
+        mock_get_objects_for_user.side_effect = [result1, result2]
+        result1.intersection.return_value = final_result
+
+        # Create composite with AND operator
+        composite = CompositePermDef([self.true_perm, self.path_perm], "and")
+
+        # Test filtering
+        result = composite.filter_queryset(queryset, self.user, self.context)
+
+        # Verify behavior - check intersection was called instead of __and__
+        self.assertEqual(result1.intersection.call_count, 1)
+        self.assertEqual(result, final_result)
+
+    @patch("guardian.shortcuts.get_objects_for_user")
+    def test_composite_filter_with_condition_fail(self, mock_get_objects_for_user):
+        # Create a test permission that will always return none() before calling get_objects_for_user
+        # Using None as short_perm_codes ensures _pre_check_perms returns False immediately
+        null_perm = PermDef(short_perm_codes=None)
+
+        # Create composite with a failing permission
+        composite = CompositePermDef([null_perm, self.path_perm], "and")
+
+        queryset = MagicMock(spec=QuerySet)
+        queryset.model = DummyObj
+        none_qs = MagicMock(spec=QuerySet)
+        queryset.none.return_value = none_qs
+
+        # Test filtering
+        result = composite.filter_queryset(queryset, self.user, self.context)
+
+        # Should return empty queryset without calling get_objects_for_user
+        # AND operations should short-circuit on the first failure
+        mock_get_objects_for_user.assert_not_called()
+        self.assertEqual(result, none_qs)
+
+    @patch("guardian.shortcuts.get_objects_for_user")
+    def test_composite_filter_with_obj_filter(self, mock_get_objects_for_user):
+        # Set up test data
+        queryset = MagicMock(spec=QuerySet)
+        queryset.model = DummyObj
+
+        # Create mock querysets with proper chaining
+        filtered_by_status = MagicMock(spec=QuerySet)
+        filtered_perms1 = MagicMock(spec=QuerySet)
+        filtered_perms2 = MagicMock(spec=QuerySet)
+        final_result = MagicMock(spec=QuerySet)
+
+        # Configure mocks
+        queryset.filter.return_value = filtered_by_status
+        mock_get_objects_for_user.side_effect = [filtered_perms1, filtered_perms2]
+
+        # Setup intersection chain - this is key for AND composites
+        filtered_perms1.intersection.return_value = final_result
+
+        # Create composite with obj_filter
+        composite = CompositePermDef([self.filter_perm, self.true_perm], "and")
+
+        # Test filtering
+        result = composite.filter_queryset(queryset, self.user, self.context)
+
+        # Verify the filter was applied
+        queryset.filter.assert_called_with(status="public")
+        mock_get_objects_for_user.assert_called()
+        self.assertEqual(result, final_result)
+
+    def test_empty_composite(self):
+        # Test that an empty composite behaves correctly
+        composite = CompositePermDef([], "or")
+        queryset = MagicMock(spec=QuerySet)
+        none_qs = MagicMock(spec=QuerySet)
+        queryset.none.return_value = none_qs
+
+        result = composite.filter_queryset(queryset, self.user, self.context)
+        self.assertEqual(result, none_qs)
 
 
 if __name__ == "__main__":

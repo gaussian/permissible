@@ -211,22 +211,3 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
             domains = [domain for domain in domains if isinstance(domain, type)]
 
         return domains
-
-    @staticmethod
-    def merge_action_perm_maps(*perm_maps):
-        """
-        Convenience function to merge two perm_maps (either "global_" or "obj_").
-
-        Note that this essentially does a "union" of the permissions, and if any
-        of the perm_maps allow a permission, then it is allowed. So this is
-        necessarily more permissive than any of the individual perm_maps.
-
-        :param perm_maps:
-        :return:
-        """
-        result = defaultdict(list)
-        keys = set(chain(*[pm.keys() for pm in perm_maps]))
-        for key in keys:
-            for perm_map in perm_maps:
-                result[key] += perm_map.get(key, [])
-        return result

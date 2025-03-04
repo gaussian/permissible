@@ -116,16 +116,28 @@ def make_domain_owned_policy(domain_attr_path: str):
     }
 
 
-# POLICY MAKER: Creates a policy for a DomainMember object,
-# requiring permissions on both the domain and the user.
-def make_domain_member_policy(domain_name: str):
+# POLICY MAKER: Creates a policy for a DomainMember object.
+# All actions have perm_def_admin, which gives permissions to those who have
+# the "change_permission" permission on the associated PermDomain object.
+# All actions besides "destroy" have perm_def_self, which gives permissions
+# to the user who is the user field of this PermDomainMember.
+def make_domain_member_policy():
+    perm_def_self = p(
+        None,
+        obj_filter=("user_id", "==", "_context.user.id"),
+    )
+    perm_def_admin = p(
+        ["change_permission"],
+        # This is joined user (unretrieved)
+        "user",
+    )
     return {
         "create": DENY_ALL,
         "list": DENY_ALL,
-        "retrieve": p(["view"], domain_name) & p(["view"], "user"),
-        "update": p(["change_on"], domain_name) & p(["change"], "user"),
-        "partial_update": p(["change_on"], domain_name) & p(["change"], "user"),
-        "destroy": DENY_ALL,
+        "retrieve": perm_def_self | perm_def_admin,
+        "update": perm_def_self | perm_def_admin,
+        "partial_update": perm_def_self | perm_def_admin,
+        "destroy": perm_def_admin,
     }
 
 
