@@ -93,10 +93,12 @@ class PermDomain(BasePermDomain):
 
         # Create/update PermDomainRole for each role in possible roles
         role_choices = domain_role_model_class._meta.get_field("role").choices
+        domain_field = domain_role_model_class.get_domain_field()
         assert isinstance(role_choices, Iterable)
         for role, _ in role_choices:
             domain_role_obj, created = domain_role_model_class.objects.get_or_create(
-                role=role, **{self._meta.model_name: self}
+                role=role,
+                **{domain_field.attname: self.pk},
             )
 
             # Force reassigning of permissions if not a new PermDomainRole
@@ -105,14 +107,18 @@ class PermDomain(BasePermDomain):
                 domain_role_obj.reset_permissions(clear_existing=True)
 
     def get_group_ids_for_roles(self, roles=None):
-        domain_role_model_class = self.get_role_join_rel().related_model
+        domain_role_model_class: Type[PermDomainRole] = (
+            self.get_role_join_rel().related_model
+        )
+        domain_field = domain_role_model_class.get_domain_field()
 
         role_choices = domain_role_model_class._meta.get_field("role").choices
         assert isinstance(role_choices, Iterable)
         roles = roles if roles is not None else [role for role, _ in role_choices]
 
         return domain_role_model_class.objects.filter(
-            role__in=roles, **{self._meta.model_name: self}
+            role__in=roles,
+            **{domain_field.attname: self.pk},
         ).values_list("group_id", flat=True)
 
     def add_user_to_groups(self, user, roles=None):

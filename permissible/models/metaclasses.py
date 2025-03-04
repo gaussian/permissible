@@ -17,7 +17,8 @@ class ExtraPermModelMetaclass(models.base.ModelBase):
     """
     Metaclass to allow model to automatically create extra permissions.
     """
-    permission_definitions = ()     # type: Iterable[Tuple[str, str]]
+
+    permission_definitions = ()  # type: Iterable[Tuple[str, str]]
 
     def __new__(mcs, name, bases, attrs):
         new_class = super().__new__(mcs, name, bases, attrs)
@@ -28,7 +29,10 @@ class ExtraPermModelMetaclass(models.base.ModelBase):
 
         new_class._meta.permissions = new_class._meta.permissions or tuple()
         new_class._meta.permissions += tuple(
-            (codename.format(new_class._meta.model_name), description.format(new_class._meta.verbose_name))
+            (
+                codename.format(new_class._meta.model_name),
+                description.format(new_class._meta.verbose_name),
+            )
             for codename, description in mcs.permission_definitions
         )
         new_class._meta.original_attrs["permissions"] = new_class._meta.permissions

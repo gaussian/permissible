@@ -75,7 +75,6 @@ class DummyModel(PermissibleMixin):
                 "partial_update": p(["change"]),
                 "destroy": p(["delete"]),
             },
-            "filters": ["status", "owner_id"],  # Mock filterable fields
         }
 
 
@@ -201,9 +200,9 @@ class TestPermissibleFilter(TestCase):
         # Verify get_objects_for_user was not called
         mock_get_objects.assert_not_called()
 
+    @patch("permissible.filters.make_context_from_request")
     @patch("guardian.shortcuts.get_objects_for_user")
-    @patch("permissible.utils.views.make_context_from_request")
-    def test_filter_queryset_with_context(self, mock_make_context, mock_get_objects):
+    def test_filter_queryset_with_context(self, mock_get_objects, mock_make_context):
         """Test filtering with context from request"""
         # Set up mock context
         context = {"status": "active", "owner_id": 123}
@@ -217,9 +216,9 @@ class TestPermissibleFilter(TestCase):
         filter_instance = PermissibleFilter()
         perm_def_mock = PermDef(short_perm_codes=["view"])
 
-        # Patch get_global_perms_def to return our mock perm_def
+        # Patch get_object_perm_def to return our mock perm_def
         with patch.object(
-            DummyModel, "get_global_perms_def", return_value=perm_def_mock
+            DummyModel, "get_object_perm_def", return_value=perm_def_mock
         ):
             # Also patch _check_perms to avoid permission checks
             with patch.object(PermDef, "_check_perms", return_value=True):
@@ -229,12 +228,12 @@ class TestPermissibleFilter(TestCase):
 
         # Verify make_context_from_request was called
         mock_make_context.assert_called_once_with(self.request)
-        # Verify get_objects_for_user was called
+
+        # Verify get_objects_for_user was called and returned result is as expected
         mock_get_objects.assert_called_once()
         self.assertEqual(result, filtered_queryset)
 
-    @patch("guardian.shortcuts.get_objects_for_user")
-    def test_filter_queryset_with_different_actions(self, mock_get_objects):
+    def test_filter_queryset_with_different_actions(self):
         """Test filtering with various view actions"""
         # Test multiple actions with appropriate detail flags
         test_cases = [
@@ -245,99 +244,58 @@ class TestPermissibleFilter(TestCase):
 
         for case in test_cases:
             with self.subTest(**case):
-                # Create view with current action and detail flag
-                view = DummyView(
-                    action=case["action"], queryset=self.queryset, detail=case["detail"]
-                )
-
-                # Set up filter instance and mock perm_def
-                filter_instance = PermissibleFilter()
-                filtered_queryset = MagicMock(spec=QuerySet)
-                mock_get_objects.return_value = filtered_queryset
-                perm_def_mock = PermDef(short_perm_codes=["view"])
-
-                # Patch get_global_perms_def to return our mock perm_def
-                with patch.object(
-                    DummyModel, "get_global_perms_def", return_value=perm_def_mock
-                ):
-                    result = filter_instance.filter_queryset(
-                        self.request, self.queryset, view
+                # Each subtest needs its own fresh mock
+                with patch(
+                    "guardian.shortcuts.get_objects_for_user"
+                ) as mock_get_objects:
+                    # Create view with current action and detail flag
+                    view = DummyView(
+                        action=case["action"],
+                        queryset=self.queryset,
+                        detail=case["detail"],
                     )
 
-                # Verify the correct action was used
-                self.assertEqual(view.action, case["action"])
-                mock_get_objects.assert_called_with(
-                    self.user, "view_dummymodel", self.queryset
-                )
-                self.assertEqual(result, filtered_queryset)
+                    # If this is a detail view, we expect no filtering to occur
+                    if case["detail"]:
+                        filter_instance = PermissibleFilter()
+                        result = filter_instance.filter_queryset(
+                            self.request, self.queryset, view
+                        )
+                        # For detail views, we expect the original queryset to be returned untouched
+                        self.assertIs(result, self.queryset)
+                        # No permission checks/filtering should happen for detail views
+                        mock_get_objects.assert_not_called()
+                    else:
+                        # For list views, we need to set up a more complex test
+                        # Set up filter instance and mock perm_def
+                        filter_instance = PermissibleFilter()
+                        filtered_queryset = MagicMock(spec=QuerySet)
+                        mock_get_objects.return_value = filtered_queryset
 
-    def test_get_schema_fields(self):
-        """Test that get_schema_fields returns the correct fields"""
-        filter_instance = PermissibleFilter()
-        view = DummyView()
+                        # Patch get_object_perm_def (not get_global_perms_def)
+                        with patch.object(
+                            DummyModel,
+                            "get_object_perm_def",
+                            return_value=PermDef(short_perm_codes=["view"]),
+                        ):
+                            result = filter_instance.filter_queryset(
+                                self.request, self.queryset, view
+                            )
 
-        # Mock get_filters to return the list of filterable fields
-        with patch.object(
-            DummyModel, "get_filters", return_value=["status", "owner_id"]
-        ):
-            schema_fields = filter_instance.get_schema_fields(view)
-
-        # Verify we get the expected number of fields
-        self.assertEqual(len(schema_fields), 2)
-
-        # Check field names
-        field_names = [field.name for field in schema_fields]
-        self.assertIn("status", field_names)
-        self.assertIn("owner_id", field_names)
-
-    def test_get_schema_fields_no_filters(self):
-        """Test that get_schema_fields returns empty list when no filters are defined"""
-        filter_instance = PermissibleFilter()
-        view = DummyView()
-
-        # Mock get_filters to return None
-        with patch.object(DummyModel, "get_filters", return_value=None):
-            schema_fields = filter_instance.get_schema_fields(view)
-
-        # Verify we get an empty list
-        self.assertEqual(schema_fields, [])
-
-    def test_get_schema_operation_parameters(self):
-        """Test that get_schema_operation_parameters returns the correct params"""
-        filter_instance = PermissibleFilter()
-        view = DummyView()
-
-        # Mock get_filters to return the list of filterable fields
-        with patch.object(
-            DummyModel, "get_filters", return_value=["status", "owner_id"]
-        ):
-            params = filter_instance.get_schema_operation_parameters(view)
-
-        # Verify we get the expected number of parameters
-        self.assertEqual(len(params), 2)
-
-        # Check parameter names
-        param_names = [param["name"] for param in params]
-        self.assertIn("status", param_names)
-        self.assertIn("owner_id", param_names)
-
-        # Check parameter properties
-        for param in params:
-            self.assertEqual(param["in"], "query")
-            self.assertFalse(param["required"])
-            self.assertIn("description", param)
-
-    def test_get_schema_operation_parameters_no_filters(self):
-        """Test that get_schema_operation_parameters returns empty list when no filters defined"""
-        filter_instance = PermissibleFilter()
-        view = DummyView()
-
-        # Mock get_filters to return None
-        with patch.object(DummyModel, "get_filters", return_value=None):
-            params = filter_instance.get_schema_operation_parameters(view)
-
-        # Verify we get an empty list
-        self.assertEqual(params, [])
+                        # Check that the call was made with the expected keywords
+                        mock_get_objects.assert_called_once()
+                        # Check the actual call arguments by inspecting call_args
+                        call_kwargs = mock_get_objects.call_args[
+                            1
+                        ]  # Get the kwargs dict
+                        self.assertEqual(call_kwargs["klass"], self.queryset)
+                        self.assertEqual(call_kwargs["user"], self.user)
+                        self.assertEqual(
+                            call_kwargs["perms"], ["testapp.view_dummymodel"]
+                        )
+                        self.assertEqual(call_kwargs["accept_global_perms"], False)
+                        # Check the result is the filtered queryset
+                        self.assertEqual(result, filtered_queryset)
 
 
 if __name__ == "__main__":

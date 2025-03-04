@@ -43,7 +43,7 @@ class PermissibleFilter(CheckViewConfigMixin, filters.BaseFilterBackend):
     """
 
     def filter_queryset(self, request, queryset, view):
-        if view.detail:
+        if self.is_detail_view(view):
             return queryset
 
         # We require PermissiblePerms to be used on the view

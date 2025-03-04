@@ -21,6 +21,12 @@ class NoPermissionsIfListMixin:
 
 
 class CheckViewConfigMixin:
+    @staticmethod
+    def is_detail_view(view):
+        if view.detail is not None:
+            return view.detail
+        return view.kwargs.get("pk", None) is not None
+
     def _check_view_config(self, view):
         from .filters import PermissibleFilter
         from .permissions import PermissiblePerms

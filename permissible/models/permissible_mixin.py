@@ -82,14 +82,6 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
         return cls.get_policies().get("domains", None)
 
     @classmethod
-    def get_filters(cls):
-        """
-        Return the filters for this instance, if any, by
-        looking at the policy configuration.
-        """
-        return cls.get_policies().get("filters", None)
-
-    @classmethod
     def get_global_perms_def(cls, action: str) -> Optional[PermDef | CompositePermDef]:
         # Try to get the global action perm map from the policies.py file for this app
         return cls.get_policies().get("global", {}).get(action, None)
@@ -133,7 +125,7 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
         perm_def = cls.get_global_perms_def(action)
         assert (
             perm_def is not None
-        ), f"No global permission defined for {cls} action {action} in `policies.ACTION_POLICIES`"
+        ), f"No global permission defined for {cls} action '{action}' in `policies.ACTION_POLICIES`"
 
         # Check permissions on the class
         return perm_def.check_global(
@@ -179,7 +171,7 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
         perm_def = self.get_object_perm_def(action)
         assert (
             perm_def is not None
-        ), f"No object permission defined for {self} action {action} in `policies.ACTION_POLICIES`"
+        ), f"No object permission defined for {self} action '{action}' in `policies.ACTION_POLICIES`"
 
         # Check permissions on the object
         return perm_def.check_obj(

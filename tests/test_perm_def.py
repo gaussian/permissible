@@ -240,7 +240,8 @@ class TestPermDef(unittest.TestCase):
     def test_obj_filter_context_value(self):
         # Test obj_filter with value from context
         perm_def = PermDef(
-            short_perm_codes=["view"], obj_filter=("owner_id", "==", "_context.user.id")
+            short_perm_codes=["view"],
+            obj_filter=("owner_id", "==", "_context.request.user.id"),
         )
 
         user = DummyUser(id=42)

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from permissible.models import PermissibleMixin
 
 
-class PermissiblePerms(CheckViewConfigMixin, permissions.BasePermission):
+class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions):
     """
     Restricts DRF access to on an object using advanced configuration.
 
@@ -74,7 +74,7 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.BasePermission):
         # request.data). We do NOT do it for "list" actions, as these are
         # expected to be filtered by the filter backend.
 
-        if not view.detail and request.data:
+        if not self.is_detail_view(view) and request.data:
             # We must create a dummy object from request data and pass it into
             # `has_object_permission`, as this function will normally not be called
             # NOTE: multiple objects are allowed, hence the list of objects checked
@@ -111,8 +111,8 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.BasePermission):
         ):
             # PERMISSION CHECK FAILED
 
-            # If user is not authenticated (if self.authenticated_users_only = False),
-            # then return False to raise a 403 (instead of 404 per the logic below)
+            # If user is not authenticated, then return False to raise a 403
+            # (instead of 404 per the logic below)
             if not user.is_authenticated:
                 return False
 

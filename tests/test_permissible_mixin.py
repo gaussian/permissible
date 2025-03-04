@@ -26,7 +26,6 @@ mock_action_policies = {
             "destroy": p(["delete"]),
         },
         "domains": ["domain_object", "parent.domain"],
-        "filters": ["status", "group"],
     },
     "tests.RelatedModel": {
         "global": {

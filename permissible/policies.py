@@ -35,7 +35,7 @@ POLICY_NO_RESTRICTION = {
 # either the global or object-level permissions to not impede
 # other permission checks - because if ANY permissions fail,
 # global or object-level, then the action is denied.
-POLICY_NO_RESTRICTION_IF_AUTHENTICATED = {
+POLICY_AUTHENTICATED = {
     "create": IS_AUTHENTICATED,
     "list": IS_AUTHENTICATED,
     "retrieve": IS_AUTHENTICATED,
@@ -121,10 +121,10 @@ def make_domain_owned_policy(domain_attr_path: str):
 # the "change_permission" permission on the associated PermDomain object.
 # All actions besides "destroy" have perm_def_self, which gives permissions
 # to the user who is the user field of this PermDomainMember.
-def make_domain_member_policy():
+def make_domain_member_policy(domain_name: str):
     perm_def_self = p(
         None,
-        obj_filter=("user_id", "==", "_context.user.id"),
+        obj_filter=("user_id", "==", "_context.request.user.id"),
     )
     perm_def_admin = p(
         ["change_permission"],
@@ -141,66 +141,66 @@ def make_domain_member_policy():
     }
 
 
-class PermissibleListIfAuthPerms(PermissibleMixin):
+# class PermissibleListIfAuthPerms(PermissibleMixin):
 
-    global_action_perm_map = {"list": IS_AUTHENTICATED}
-
-
-class PermissibleDenyPerms(PermissibleListIfAuthPerms):
-    """
-    A default configuration of permissions that denies all standard DRF actions
-    on objects, and denies object listing to unauthenticated users.
-
-    Note that no global checks are done.
-    Note that no "list" permission checks are done (permissions checks should
-    instead be done on the actual object, in the "list" action, via
-    `permissible.PermissibleDirectFilter`).
-    """
-
-    obj_action_perm_map = {
-        "create": DENY_ALL,
-        "retrieve": DENY_ALL,
-        "update": DENY_ALL,
-        "partial_update": DENY_ALL,
-        "destroy": DENY_ALL,
-    }
+#     global_action_perm_map = {"list": IS_AUTHENTICATED}
 
 
-class PermissibleDefaultPerms(PermissibleListIfAuthPerms):
-    """
-    A default configuration of permissions that ONLY checks for object-level
-    permissions on the object that we are trying to access.
+# class PermissibleDenyPerms(PermissibleListIfAuthPerms):
+#     """
+#     A default configuration of permissions that denies all standard DRF actions
+#     on objects, and denies object listing to unauthenticated users.
 
-    Note that no global checks are done.
-    Note that no "list" permission checks are done (inaccessible objects
-    should be filtered out instead).
-    No "create" permission, this should be overridden if needed.
-    """
+#     Note that no global checks are done.
+#     Note that no "list" permission checks are done (permissions checks should
+#     instead be done on the actual object, in the "list" action, via
+#     `permissible.PermissibleDirectFilter`).
+#     """
 
-    obj_action_perm_map = {
-        "create": DENY_ALL,
-        "retrieve": p(["view"]),
-        "update": p(["change"]),
-        "partial_update": p(["change"]),
-        "destroy": p(["delete"]),
-    }
+#     obj_action_perm_map = {
+#         "create": DENY_ALL,
+#         "retrieve": DENY_ALL,
+#         "update": DENY_ALL,
+#         "partial_update": DENY_ALL,
+#         "destroy": DENY_ALL,
+#     }
 
 
-class PermissibleDefaultWithGlobalCreatePerms(PermissibleDefaultPerms):
-    """
-    A default configuration of permissions that ONLY checks for object-level
-    permissions on the object that we are trying to access, and additionally
-    requires (for creation) that global "add" permission exists for this user.
+# class PermissibleDefaultPerms(PermissibleListIfAuthPerms):
+#     """
+#     A default configuration of permissions that ONLY checks for object-level
+#     permissions on the object that we are trying to access.
 
-    Note that no "list" permission checks are done (inaccessible objects
-    should be filtered out instead).
-    """
+#     Note that no global checks are done.
+#     Note that no "list" permission checks are done (inaccessible objects
+#     should be filtered out instead).
+#     No "create" permission, this should be overridden if needed.
+#     """
 
-    global_action_perm_map = {
-        "create": p(["add"]),
-    }
+#     obj_action_perm_map = {
+#         "create": DENY_ALL,
+#         "retrieve": p(["view"]),
+#         "update": p(["change"]),
+#         "partial_update": p(["change"]),
+#         "destroy": p(["delete"]),
+#     }
 
-    obj_action_perm_map = {
-        **PermissibleDefaultPerms.obj_action_perm_map,
-        "create": ALLOW_ALL,
-    }
+
+# class PermissibleDefaultWithGlobalCreatePerms(PermissibleDefaultPerms):
+#     """
+#     A default configuration of permissions that ONLY checks for object-level
+#     permissions on the object that we are trying to access, and additionally
+#     requires (for creation) that global "add" permission exists for this user.
+
+#     Note that no "list" permission checks are done (inaccessible objects
+#     should be filtered out instead).
+#     """
+
+#     global_action_perm_map = {
+#         "create": p(["add"]),
+#     }
+
+#     obj_action_perm_map = {
+#         **PermissibleDefaultPerms.obj_action_perm_map,
+#         "create": ALLOW_ALL,
+#     }

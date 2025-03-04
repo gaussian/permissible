@@ -119,6 +119,8 @@ class PermDef:
         Check object permissions.
         """
 
+        assert obj, "Object must be provided to check object permissions"
+
         # Configuration check
         if not self.key_to_obj_in_context:
             assert (
@@ -138,7 +140,13 @@ class PermDef:
             obj = obj_class.objects.get(pk=obj_pk)
         # ...or get by following the attribute path from the input object
         elif self.obj_path:
+
             obj = obj.get_unretrieved(self.obj_path)
+        # ...otherwise, if there is no persisted object to check permissions
+        # for (i.e. no primary key), then permission granted, because nothing
+        # to fail on
+        elif not obj.pk:
+            return True
 
         # Fail if no object found
         if not obj or not obj.pk:
@@ -151,7 +159,12 @@ class PermDef:
         # Actually check object permissions
         return self._check_perms(user=user, obj=obj)
 
-    def filter_queryset(self, queryset, user, context=None):
+    def filter_queryset(
+        self,
+        queryset,
+        user: PermissionsMixin,
+        context=None,
+    ):
         """
         Filter a queryset down to permitted objects.
         """
@@ -223,7 +236,11 @@ class PermDef:
 
         return queryset
 
-    def _check_obj_filter(self, obj: BasePermDefObj, context: Optional[dict] = None):
+    def _check_obj_filter(
+        self,
+        obj: BasePermDefObj,
+        context: Optional[dict] = None,
+    ):
         if self.obj_filter:
             obj_attr, operator, _ = self.obj_filter
             needed_value = self._get_needed_value_for_obj_filter(context)
@@ -313,7 +330,7 @@ class PermDef:
 
     def _check_perms(
         self,
-        user,
+        user: PermissionsMixin,
         obj_class: Optional[Type[BasePermDefObj]] = None,
         obj: Optional[BasePermDefObj] = None,
     ):
