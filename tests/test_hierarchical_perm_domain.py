@@ -6,20 +6,24 @@ from django.test import TestCase
 from django.contrib.auth.models import Group
 from django.contrib.auth import get_user_model
 
-from permissible.models import HierarchicalPermDomain
+from permissible.models.role_based.hierarchical import HierarchicalPermDomain
+from permissible.models.role_based.core import PermDomainRole, PermDomainMember
 
 
 # Define a dummy concrete model for HierarchicalPermDomain
 class DummyHierarchicalDomain(HierarchicalPermDomain):
     name = models.CharField(max_length=100)
-    parent = models.ForeignKey(
-        "self", null=True, blank=True, on_delete=models.CASCADE, related_name="children"
-    )
     groups = models.ManyToManyField(
-        Group, related_name="dummy_hierarchical_domains", blank=True
+        Group,
+        through="DummyHierarchicalDomainRole",
+        related_name="dummy_hierarchical_domains",
+        blank=True,
     )
     users = models.ManyToManyField(
-        get_user_model(), related_name="dummy_hierarchical_domains", blank=True
+        get_user_model(),
+        through="DummyHierarchicalDomainMember",
+        related_name="dummy_hierarchical_domains",
+        blank=True,
     )
 
     def __str__(self):
@@ -27,6 +31,47 @@ class DummyHierarchicalDomain(HierarchicalPermDomain):
 
     class Meta:
         app_label = "permissible"  # Ensure proper app_label for testing
+
+
+# Define a dummy domain role model that links DummyHierarchicalDomain to roles
+class DummyHierarchicalDomainRole(PermDomainRole):
+    domain = models.ForeignKey(
+        DummyHierarchicalDomain, on_delete=models.CASCADE, related_name="domain_roles"
+    )
+
+    # Use the standard role definitions from PermDomainRole
+    ROLE_DEFINITIONS = {
+        "mem": ("Member", []),
+        "view": ("Viewer", ["view"]),
+        "adm": ("Admin", ["view", "change", "delete"]),
+    }
+
+    # Define role field using the build_role_field utility from PermDomainRole
+    role = models.CharField(
+        choices=[(k, v[0]) for k, v in ROLE_DEFINITIONS.items()],
+        max_length=4,
+        default="mem",
+    )
+
+    class Meta:
+        app_label = "permissible"
+        # Group and domain together must be unique
+        unique_together = ("group", "domain")
+
+
+class DummyHierarchicalDomainMember(DummyHierarchicalDomain):
+    """
+    A concrete PermDomainMember. It joins HierarchicalPermDomain to a User.
+    """
+
+    dummydomain = models.ForeignKey(
+        DummyHierarchicalDomain,
+        on_delete=models.CASCADE,
+        related_name="dummydomain_members",
+    )
+
+    class Meta:
+        app_label = "permissible"
 
 
 class HierarchicalPermDomainTests(TestCase):
