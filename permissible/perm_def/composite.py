@@ -103,6 +103,51 @@ class CompositePermDef(PermDef):
         else:  # operator == "and"
             return all(perm.check_obj(obj, user, context) for perm in self.perm_defs)
 
+    def filter_queryset(self, queryset, user, context=None):
+        """
+        Filter a queryset down to the objects permitted by this CompositePermDef.
+        Combines child PermDefs using logical AND or OR.
+        """
+        # Safety check: if no child perm_defs, just return none()
+        if not self.perm_defs:
+            return queryset.none()
+
+        # For AND logic, we can short-circuit if any perm_def returns empty queryset
+        if self.operator == "and":
+            for perm_def in self.perm_defs:
+                # For each perm_def, check if its pre-check would fail
+                # If it's a PermDef with None short_perm_codes, it will always fail
+                if getattr(perm_def, "short_perm_codes", None) is None:
+                    return queryset.none()
+
+                # Also check if global condition would fail (no need to filter then)
+                if hasattr(perm_def, "check_global_condition"):
+                    if not perm_def.check_global_condition(user, context):
+                        return queryset.none()
+
+        # Get filtered querysets from all child PermDefs
+        filtered_querysets = []
+        for perm_def in self.perm_defs:
+            child_qs = perm_def.filter_queryset(queryset, user, context=context)
+            filtered_querysets.append(child_qs)
+
+            # Short circuit for AND: if any queryset is empty, result will be empty
+            if self.operator == "and" and not child_qs.exists():
+                return queryset.none()
+
+        # Combine results based on operator
+        if not filtered_querysets:
+            return queryset.none()
+
+        result = filtered_querysets[0]
+        for qs in filtered_querysets[1:]:
+            if self.operator == "or":
+                result = result.union(qs)
+            else:  # self.operator == "and"
+                result = result.intersection(qs)
+
+        return result
+
     def __or__(self, other):
         """
         Overloaded | operator for combining permissions with OR logic.

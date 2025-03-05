@@ -3,117 +3,353 @@
 Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
-from typing import List, Type, Union, Optional, Callable
+from typing import Any, List, Type, Union, Optional, Callable
 
+from django.apps import apps
 from django.contrib.auth.models import PermissionsMixin
 
-from .short_perms import ShortPermsMixin
+from .base import BasePermDefObj
 
 
 class PermDef:
     """
     A simple data structure to hold instructions for permissions configuration.
 
+    This class allows defining permissions using short permission codes, object getters,
+    and condition checkers. It supports both global and object-level permission checks.
+
     Examples:
-        PermDef(["view"], obj_getter=lambda o, c: o.project.team)
-        PermDef([], condition_checker=lambda o, u, c: o.is_public)
-        PermDef(["view", "change"], condition_checker=lambda o, u: not o.is_public and u.is_superuser)
+        Define a permission that checks for "view" permission on the object's project's team
+        `PermDef(["view"], obj_path="project.team")`
+
+        Define a permission that checks if the object is public
+        `PermDef([], global_condition_checker=lambda o, u, c: o.is_public)`
+
+        Define a permission that checks for "view" and "change" permissions and if the user is a superuser
+        `PermDef(["view", "change"], condition_checker=lambda o, u: not o.is_public and u.is_superuser)`
     """
 
     def __init__(
         self,
         short_perm_codes: Optional[List[str]],
-        obj_getter: Optional[
-            Union[Callable[[object, object], Optional[ShortPermsMixin]], str]
-        ] = None,
-        condition_checker: Optional[
-            Union[Callable[[object, object, object], bool], str]
-        ] = None,
+        obj_path: Optional[str] = None,
+        obj_filter: Optional[tuple[str, str, Any]] = None,
+        global_condition_checker: Optional[Callable[[object, object], bool]] = None,
+        model_label: Optional[str] = None,
     ):
         """
         Initialize.
-        :param short_perm_codes: A list of short permission codes, e.g. ["view", "change"]
-        :param obj_getter: A function/str that takes an initial object and returns the obj to check
-        object, e.g. a "survey" might be the object to check for "survey question" objects
-        :param condition_checker: A function/str that takes an object, the user, and additional
+        :param short_perm_codes: A list of short permission codes, e.g. ["view", "change"].
+        :param obj_path: A string that is a path of attributes to get the object from the
+        input object, excluding the initial class (e.g. "survey.project.team" for a Question
+        model). If not provided, the input object will be used. If the first element is "_context",
+        then we will try to get the object from the context that is also provided to the check.
+        :param obj_filter: A tuple of strings for additional filtering on the object in the format of (obj_attr, operator, needed_value)). Needed value can also be a path starting with "_context" to get the value from the context (e.g. ("project_id", "==", "_context.project_id")).
+        :param global_condition_checker: A function/str that takes the user and additional
         context, and returns a boolean, which is AND'd with the result of user.has_perms to
-        return whether permission is successful
+        return whether permission is successful.
+        :param model_label: A string that is the label of the model to be used in the permission
+        check. If not provided, the model of the input object will be used. This should usually
+        be `None` unless you are checking permissions on a model referenced from the context object
+        (i.e. `obj_path` starts with "_context.").
         """
         self.short_perm_codes = short_perm_codes
-        self.obj_getter = obj_getter
-        self.condition_checker = condition_checker
+        self.obj_filter = obj_filter
+        self.global_condition_checker = global_condition_checker
+        self.model_label = model_label
+
+        # Parse the obj_path
+        # (if the first element is "_context", then we will try to get the object
+        # from the context when it is provided to the check functions)
+        self.obj_path = obj_path
+        self.obj_path_chain = obj_path.split(".") if obj_path else []
+        self.key_to_obj_in_context = None
+        if self.obj_path_chain:
+            if self.obj_path_chain[0] == "_context":
+                assert (
+                    len(self.obj_path_chain) == 2
+                ), f"If obj_path starts with '_context', it must have exactly one more key in the chain, got {self.obj_path_chain}"
+                assert (
+                    self.model_label
+                ), "If obj_path starts with '_context', model_label must be provided"
+                self.key_to_obj_in_context = self.obj_path_chain[1]
+            else:
+                assert (
+                    not self.model_label
+                ), "Model label should not be provided if using obj_path but not using _context"
 
     def check_global(
         self,
-        obj_class: Type[ShortPermsMixin],
+        obj_class: Type[BasePermDefObj],
         user: PermissionsMixin,
-        context=None,
+        context: Optional[dict] = None,
     ):
         """
-        Check global permissions
+        Check global permissions.
         """
-        return self._check(
-            must_check_obj=False,
-            obj=None,
-            obj_class=obj_class,
-            user=user,
-            context=context,
-        )
+
+        # Check the "condition checker" (and fail if it does not pass)
+        if not self.check_global_condition(user=user, context=context):
+            return False
+
+        # Try to get the necessary object class
+        if self.model_label:
+            obj_class = apps.get_model(self.model_label)
+        elif self.obj_path:
+            obj_class = obj_class.get_unretrieved_class(self.obj_path)
+
+        # Fail if no object class
+        if not obj_class:
+            return False
+
+        assert (
+            not self.obj_filter
+        ), "Object filter not supported for global checks, check your ACTION_POLICIES"
+
+        # Actually check global permissions
+        return self._check_perms(user=user, obj_class=obj_class)
 
     def check_obj(
         self,
-        obj: ShortPermsMixin,
+        obj: BasePermDefObj,
         user: PermissionsMixin,
         context=None,
     ):
         """
-        Check object permissions
+        Check object permissions.
         """
-        return self._check(
-            must_check_obj=True,
-            obj=obj,
-            obj_class=obj.__class__,
-            user=user,
-            context=context,
-        )
 
-    def _check(
-        self,
-        must_check_obj: bool,
-        obj: Optional[ShortPermsMixin],
-        obj_class: Type[ShortPermsMixin],
-        user: PermissionsMixin,
-        context=None,
-    ):
-        """ """
-        # Try to get the necessary object (if object-level permissions, fail if no obj found)
-        obj = self.get_obj_to_check(obj=obj, context=context)
-        if must_check_obj and (not obj or not obj.pk):
+        assert obj, "Object must be provided to check object permissions"
+
+        # Configuration check
+        if not self.key_to_obj_in_context:
+            assert (
+                not self.model_label
+            ), f"Cannot use model label ({self.model_label}) for object permissions check if not using '_context' (in `obj_path`) to get the model PK"
+
+        # Check the "condition checker" (and fail if it does not pass)
+        if not self.check_global_condition(user=user, context=context):
             return False
 
-        # Check the "condition checker"
-        obj_check_passes = self.check_condition(obj=obj, user=user, context=context)
+        # Get the necessary object, if not the current one
+        # Get from context...
+        if self.key_to_obj_in_context:
+            assert context, "Context must be provided to get object from"
+            obj_pk = context.get(self.key_to_obj_in_context)
+            obj_class = apps.get_model(self.model_label)
+            obj = obj_class.objects.get(pk=obj_pk)
+            if not obj or not obj.pk:
+                return False
 
+        # ...or get by following the attribute path from the input object
+        elif self.obj_path:
+            obj = obj.get_unretrieved(self.obj_path)
+            if not obj or not obj.pk:
+                return False
+
+        # Check object conditions
+        if not self._check_obj_filter(obj, context):
+            return False
+
+        # Actually check object permissions
+        return self._check_perms(user=user, obj=obj)
+
+    def filter_queryset(
+        self,
+        queryset,
+        user: PermissionsMixin,
+        context=None,
+    ):
+        """
+        Filter a queryset down to permitted objects.
+        """
+        from guardian.shortcuts import get_objects_for_user
+
+        # Check the "condition checker" (and fail if it does not pass)
+        if not self.check_global_condition(user=user, context=context):
+            return queryset.none()
+
+        # Choose the appropriate model for permissions checking
+        obj_class: Type[BasePermDefObj] = queryset.model
+
+        # If obj_path is set, we need to change our model class by following the path
+        obj_query_path = None
+        if self.obj_path and not self.key_to_obj_in_context:
+            # eg obj_path = "survey.project.team" for a Question model
+            chain_information = obj_class.resolve_chain(self.obj_path)
+            # obj_class is the final model in the chain
+            # eg Team for the Question model above
+            obj_class = chain_information["final_model_class"]
+            # Query path is the path from the original object for filtering
+            # eg "survey__project__team_id" for the Question model above
+            obj_query_path = chain_information["query_path"]
+            # Get the queryset of all objects
+            obj_queryset = obj_class.objects.all()
+
+        # If obj_path is not set, we don't need to change our model class and can
+        # use the original queryset
+        else:
+            obj_queryset = queryset
+
+        # Apply the self.obj_filter
+        obj_queryset = self._apply_obj_filter_to_queryset(obj_queryset, context)
+
+        # In some cases we don't even need to check perms
+        # If pre-check fails, return an empty queryset, but if it passes, continue
+        # without doing perm checking (the reason we don't return immediately if
+        # the pre-check succeeds is that we may still need to translate the
+        # obj_queryset to the original model's queryset)
+        perm_precheck = self._pre_check_perms()
+        if perm_precheck is False:
+            return queryset.none()
+
+        # Pre-check didn't give an auto-success or failure:
+        # Filter down to the objects that pass permissions
+        if perm_precheck is None:
+            perms = obj_class.get_permission_codenames(self.short_perm_codes)
+            obj_queryset = get_objects_for_user(
+                klass=obj_queryset,
+                user=user,
+                perms=perms,
+                accept_global_perms=False,
+            )
+
+        # If obj_path is set, we need to translate this queryset to the original
+        # model's queryset
+        if self.obj_path:
+            # Get the queryset of PKs of the objects that pass permissions
+            obj_pks_queryset = obj_queryset.values_list("pk")
+            # Get the query path to the primary key attribute
+            # eg "survey__project__team_id__in" for the Question model above
+            obj_pk_query_path = f"{obj_query_path}__in"
+            # Filter the original queryset down to the objects that pass permissions
+            queryset = queryset.filter(**{obj_pk_query_path: obj_pks_queryset})
+
+        # Otherwise, we can just return the queryset we were manipulating
+        else:
+            queryset = obj_queryset
+
+        return queryset
+
+    def _check_obj_filter(
+        self,
+        obj: BasePermDefObj,
+        context: Optional[dict] = None,
+    ):
+        if self.obj_filter:
+            obj_attr, operator, _ = self.obj_filter
+            needed_value = self._get_needed_value_for_obj_filter(context)
+            obj_attr_chain = obj_attr.split(".")
+            current_value = obj
+            for attr in obj_attr_chain:
+                current_value = getattr(current_value, attr)
+            if operator == "==":
+                if current_value != needed_value:
+                    return False
+            elif operator == "!=":
+                if current_value == needed_value:
+                    return False
+            elif operator == ">":
+                if current_value <= needed_value:
+                    return False
+            elif operator == "<":
+                if current_value >= needed_value:
+                    return False
+            else:
+                raise ValueError(f"Operator {operator} not supported")
+
+        # Return True if there's no filter or if all checks pass
+        return True
+
+    def _apply_obj_filter_to_queryset(
+        self,
+        queryset,
+        context: Optional[dict] = None,
+    ):
+        if self.obj_filter:
+            obj_attr, operator, _ = self.obj_filter
+            needed_value = self._get_needed_value_for_obj_filter(context)
+            queryset_kwarg = obj_attr.replace(".", "__")
+            if operator == "==":
+                queryset = queryset.filter(**{queryset_kwarg: needed_value})
+            elif operator == "!=":
+                queryset = queryset.exclude(**{queryset_kwarg: needed_value})
+            elif operator == ">":
+                queryset = queryset.filter(**{queryset_kwarg + "__gt": needed_value})
+            elif operator == "<":
+                queryset = queryset.filter(**{queryset_kwarg + "__lt": needed_value})
+            else:
+                raise ValueError(f"Operator {operator} not supported")
+        return queryset
+
+    def _get_needed_value_for_obj_filter(
+        self,
+        context: Optional[dict] = None,
+    ):
+        if self.obj_filter:
+            _, _, needed_value = self.obj_filter
+
+            # If it's not a string, return it directly (handles numbers, booleans, etc)
+            if not isinstance(needed_value, str):
+                return needed_value
+
+            # Otherwise, handle string values which might be context paths
+            needed_value_chain = needed_value.split(".")
+            if needed_value_chain[0] == "_context":
+                assert context, "Context must be provided to get object from"
+                current_value = context[needed_value_chain[1]]
+                # Use getattr for the remaining path components (after context lookup)
+                for key in needed_value_chain[2:]:
+                    if hasattr(current_value, key):
+                        current_value = getattr(current_value, key)
+                    else:
+                        current_value = current_value[key]
+                return current_value
+            else:
+                # Regular string value (not a context path)
+                return needed_value
+
+    def _pre_check_perms(self):
         # If short_perm_codes is None, we cannot pass permissions
-        # (note that if short_perm_codes is [], permissions WILL ALWAYS pass)
         if self.short_perm_codes is None:
             return False
 
-        # Actually check permissions!
-        perms = obj_class.get_permission_codenames(self.short_perm_codes)
-        has_perms = user.has_perms(perms, obj)
-
-        # Both `has_perms` and `check_condition` must have passed
-        if has_perms and obj_check_passes:
+        # If short_perm_codes is [] (empty), permissions WILL ALWAYS pass
+        # (this is useful for objects that are always public, or when we
+        # want to check a condition eg "is authenticated" earlier without
+        # checking permissions)
+        if len(self.short_perm_codes) == 0:
             return True
 
-        return False
+        return None
+
+    def _check_perms(
+        self,
+        user: PermissionsMixin,
+        obj_class: Optional[Type[BasePermDefObj]] = None,
+        obj: Optional[BasePermDefObj] = None,
+    ):
+        assert obj or obj_class, "Either obj or obj_class must be provided"
+        obj_class = obj_class or obj.__class__
+        assert obj_class
+
+        assert not obj or hasattr(obj, "pk"), "The object must have a primary key."
+
+        # In some cases we don't even need to check perms
+        perm_precheck = self._pre_check_perms()
+        if perm_precheck is not None:
+            return perm_precheck
+
+        # Get full permission codenames
+        perms = obj_class.get_permission_codenames(self.short_perm_codes)
+
+        # Check perms (if obj is None, we are checking global perms)
+        return user.has_perms(perms, obj)
 
     def get_obj_to_check(
         self,
-        obj: Optional[ShortPermsMixin],
-        context=None,
-    ) -> Optional[ShortPermsMixin]:
+        obj: Optional[BasePermDefObj],
+    ) -> Optional[BasePermDefObj]:
         """
         Using the provided object and context, return the actual object for which we will
         be checking permissions.
@@ -122,42 +358,43 @@ class PermDef:
         :param context: Context dictionary for additional context
         :return: Object for which permissions will be checked
         """
-        # Getter function is set - use it
-        if self.obj_getter:
-
-            # Getter function is a string (member of object)...
-            if isinstance(self.obj_getter, str):
-                assert obj, "Object must be provided to get object from"
-                return getattr(obj, self.obj_getter)(context)
-
-            # ...or getter function is a lambda
-            return self.obj_getter(obj, context)
+        # Obj path is set (i.e. a chain of attributes)...
+        if self.obj_path:
+            assert obj, "Object must be provided to get object from"
+            return obj.get_unretrieved(self.obj_path)
 
         # Getter function is not set - return the original object
         return obj
 
-    def check_condition(self, obj, user, context=None) -> bool:
+    def check_global_condition(self, user, context=None) -> bool:
         """
         Using the provided object, context, and user, perform the condition check
         for this `PermDef`, if one was provided.
 
-        :param obj: Initial object, from which to find the object to check perms on
         :param user: Authenticating user
         :param context: Context dictionary for additional context
         :return: Did check pass?
         """
         # No checker - check passes by default
-        if not self.condition_checker:
+        if not self.global_condition_checker:
             return True
 
-        # Checker function is a string (member of object)...
-        if isinstance(self.condition_checker, str):
-            return getattr(obj, self.condition_checker)(user, context)
-
-        # ...or checker function is a lambda
-        return self.condition_checker(obj, user, context)
+        # Ryun checker function
+        return self.global_condition_checker(user, context)
 
     def __or__(self, other):
+        """
+        Overloaded | operator for combining permissions with OR logic.
+
+        This allows for a more readable syntax when combining permission definitions:
+        `perm1 | perm2` instead of `CompositePermDef([perm1, perm2], "or")`
+
+        Args:
+            other: Another PermDef instance to combine with this one
+
+        Returns:
+            CompositePermDef: A new composite with OR logic
+        """
         from .composite import CompositePermDef
 
         if not isinstance(other, PermDef):
@@ -165,6 +402,18 @@ class PermDef:
         return CompositePermDef([self, other], "or")
 
     def __and__(self, other):
+        """
+        Overloaded & operator for combining permissions with AND logic.
+
+        This allows for a more readable syntax when combining permission definitions:
+        `perm1 & perm2` instead of `CompositePermDef([perm1, perm2], "and")`
+
+        Args:
+            other: Another PermDef instance to combine with this one
+
+        Returns:
+            CompositePermDef: A new composite with AND logic
+        """
         from .composite import CompositePermDef
 
         if not isinstance(other, PermDef):

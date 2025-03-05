@@ -3,11 +3,11 @@
 Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
-from .perm_def import PermDef
+from .perm_def import p
 
 
-ALLOW_ALL = PermDef([])
-DENY_ALL = PermDef(None)
+ALLOW_ALL = p([])
+DENY_ALL = p(None)
 
-IS_AUTHENTICATED = PermDef(None, condition_checker=lambda o, u, c: bool(u.pk))
-IS_PUBLIC = PermDef(None, condition_checker=lambda o, u, c: o.is_public)
+IS_AUTHENTICATED = p([], global_condition_checker=lambda u, c: bool(u.pk))
+IS_PUBLIC = p([], obj_filter=("is_public", "==", True))

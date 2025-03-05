@@ -36,7 +36,7 @@ any other place you use PermissibleMixin).
 
 # Features
 
-## Feature 1: Consistent permissions configuration
+## Feature 1: Consistent, policy-based permissions configuration
 
 In its simplest form, `permissible` can be used just for its permissions
 configuration. This has no impact on your database, and does not rely on any
@@ -44,10 +44,26 @@ particular object-level permissions library. (It does require one; we prefer
 django-guardian.)
 
 Here, we add the `PermissibleMixin` to each model we want to protect, and
-define "permissions maps" that define what permissions are needed for each action
+define policies for ach that define what permissions are needed for each action
 that is taken on an object in the model (e.g. a "retrieve" action on a "survey").
-(We can also use classes like `PermissibleDefaultPerms` to define good default
-permission maps for our models.)
+
+Policies are defined in a `policies.py`, in a dict called `ACTION_POLICIES`, eg:
+```
+ACTION_POLICIES = {
+    "surveys.Survey": {
+        "global": {
+            "create": NO_RESTRICTION,
+            "retrieve": NO_RESTRICTION,
+            ...
+        },
+        "object": {
+            "create": NO_RESTRICTION,
+            "retrieve": p(["view"]),
+            ...
+        },
+    }
+}
+```
 
 With the permissions configured, now we can force different views to use them:
 - If you would like the permissions to work for API views (via
@@ -84,11 +100,27 @@ and has a `ForeignKey` to the domain model - and defines `ROLE_DEFINITIONS`
 and has a `ForeignKey` to the domain model (this model automatically adds and
 removes records when a user is a member of the appropriate `PermDomainRole`)
 
-Then, use **`DomainOwnedPermMixin`** on any models
+Then, set up the `ACTION_POLICIES` appropriately. For instance, for a model class
+"surveys.Survey" owned by its Survey.project.team, we might have the following:
+```
+ACTION_POLICIES = {
+    "surveys.Survey": {
+        "global": {
+            "create": NO_RESTRICTION,
+            "retrieve": NO_RESTRICTION,
+            ...
+        },
+        "object": {
+            "create": p(["add_on"], "project.team"),
+            "retrieve": p(["view_on"], "project.team"),
+            ...
+        },
+    }
+}
 
-You can then simply adjust your permissions maps in `PermissibleMixin` to
-incorporate checking of the domain model for permissions. See the documentation for
-`PermDef` and `PermissibleMixin.has_object_permissions` for info and examples.
+You can adjust `ACTION_POLICIES` to incorporate checking of the domain model for
+permissions. See the documentation for `PermDef` and
+`PermissibleMixin.has_object_permissions` for info and examples.
 
 Remember: `PermDomain` is the core model on which roles are defined (eg Project or
 Team) and `PermDomainRole` is the model that represents a single role (and
@@ -123,32 +155,40 @@ shortcut. Also, `admin.PermissibleObjectAssignMixin` extends the
 ## PermissibleMixin:
 
 - Add `PermissibleMixin` to any model you want to protect
-- Define `global_action_perm_map` and `obj_action_perm_map` on each model, otherwise
-  use mixins in `permissible.models.permission_mixin` that define them out of the
-  box (eg `PermissibleDenyPerms`, `PermissibleDefaultPerms`)
-  - If defining `global_action_perm_map` and `obj_action_perm_map` on your own,
-    remember that (just like Django's permission checking normally) both global
+- Define `ACTION_POLICIES` in `policies.py` for each app, where each key is the
+  full model label (eg `accounts.User`), see example above
+  - Remember that (just like Django's permission checking normally) both global
     and object permissions must pass
-  - Both `global_action_perm_map` and `obj_action_perm_map` use the same format:
-    a map of actions to a list of `PermDef` objects
+  - Both `"global"` and `"object"` keys use the same format: a map of actions
+    to a list of `PermDef` objects
   - Actions are the same as those defined by DRF (for convenience):
-    `list`, `create`, `retrieve`, `update`, `partial_update`, `destroy`, and any others
-    you want to define and check later
+    `create`, `retrieve`, `update`, `partial_update`, `destroy`, and any others
+    you want to define and check later (`list` uses `retrieve` permissions
+    by default but can also define its own if needed)
 - See below for `PermDef` explanation
 
 
 ## PermDef
 
-- A simple data structure to hold permissions configuration. Each action inside
-  `global_action_perm_map` and `obj_action_perm_map` has a list of `PermDef`
+- A simple data structure to hold permissions configuration.
 - Each `PermDef` is defined with the following:
     - `short_perm_codes`: A list of short permission codes, e.g. ["view", "change"]
-    - `obj_getter`: A function/str that takes the object we are checking, and returns
+    - `obj_path`: An optional string path (e.g. "project.team") from the original object to
       a **potentially different** object on whom we will actually check permissions.
       (For instance if you want to check a related parent object to determine whether
       the user has access to the child object. This is critical for PermDomain behavior.)
-    - `condition_checker`: An ADDITIONAL check, on top of the usual permissions-checking
-      (`user.has_perms`).
+    - `global_condition_checker`: An ADDITIONAL check, on top of the usual
+      permissions-checking (`user.has_perms`). Is passed the user instance and the
+      context object (by default, the values inside the `request` object)
+    - `obj_filter`: A tuple of `(attr, operator, needed_value)` to further check the
+      object - e.g. `("is_public", "==", True)`. For `PermissibleFilter`, this is
+      also used to filter the queryset down to permitted objects.
+    - `model_label`: A fully qualified model label to use a different model class
+      for checks. This is only used if the `obj_path` actually points to the context
+      (e.g. `obj_path="_context.team_id"`) to perform additional permission checks
+      based on the context (i.e. what is inside the request object)
+- PermDef objects can be combined with each other, either with `|` or `&` - e.g.
+  `PermDef(["view"]) | PermDef(["custom_perm"])`
 
 
 # Example flow

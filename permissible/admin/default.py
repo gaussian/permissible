@@ -24,8 +24,8 @@ class PermissibleAdminMixin(object):
     who have the necessary permissions for that object.
 
     Models that are to be protected in this way should use `PermissibleMixin`,
-    and the necessary permissions should be configured using `global_action_perm_map`
-    and `obj_action_perm_map` from that mixin.
+    and the necessary permissions should be configured using
+    `policies.ACTION_POLICIES[<model_label>]`.
 
     Requires use of an object-level permissions library/schema such as
     django-guardian.

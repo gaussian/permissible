@@ -3,7 +3,7 @@ from typing import Any, Optional, Type, Union
 from django.db import models
 
 
-class UnretrievedModelMixin(object):
+class LazyModelResolverMixin(object):
     """
     Mixin to allow a model to retrieve an *unretrieved* model instance for a
     dot-separated chain of foreign keys, using exactly one DB query if multi-level,
@@ -35,7 +35,7 @@ class UnretrievedModelMixin(object):
         A model instance with the correct primary key (but not fetched from the DB) or None
         if the primary key is null or if the query returns a number of results != 1.
         """
-        res = self._resolve_chain(attr_key)
+        res = self.resolve_chain(attr_key)
         final_model_class = res["final_model_class"]
 
         root_field = res["root_field"]
@@ -84,11 +84,11 @@ class UnretrievedModelMixin(object):
         Example:
         If attr_key is "experiment.team", this property returns the Team model class.
         """
-        res = cls._resolve_chain(attr_key)
+        res = cls.resolve_chain(attr_key)
         return res["final_model_class"]
 
     @classmethod
-    def _resolve_chain(cls, attr_key: str) -> dict[str, Any]:
+    def resolve_chain(cls, attr_key: str) -> dict[str, Any]:
         """
         Traverse a dot-separated chain of foreign key attributes and return a dictionary
         with all details needed to either directly construct the final model instance or
@@ -171,25 +171,32 @@ class UnretrievedModelMixin(object):
     @classmethod
     def make_objs_from_data(
         cls, obj_dict_or_list: Union[dict, list[dict]]
-    ) -> Union[models.Model, list[models.Model]]:
+    ) -> list[models.Model]:
         """
         Turn data (usually request.data) into a model object (or a list of model
         objects). Allows multiple objects to be built.
 
         Helpful for non-detail, non-list actions (in particular, the "create"
         action), to allow us to check if the provided user can do the action via
-        `obj_action_perm_map`.
+        `policies.ACTION_POLICIES[<model_label>]["object"]`.
 
         :param obj_dict_or_list: Model data, in dictionary form (or list of
         dictionaries).
         :return: models.Model object (or list of such objects)
         """
         if isinstance(obj_dict_or_list, list):
-            return [cls._make_obj_from_data(obj_dict=d) for d in obj_dict_or_list]
-        return [cls._make_obj_from_data(obj_dict=obj_dict_or_list)]
+            return [cls.make_obj_from_data(obj_dict=d) for d in obj_dict_or_list]
+        return [cls.make_obj_from_data(obj_dict=obj_dict_or_list)]
 
     @classmethod
-    def _make_obj_from_data(cls, obj_dict: dict) -> models.Model:
+    def make_obj_from_data(cls, obj_dict: dict) -> models.Model:
+        """
+        Turn data (usually request.data) into a model object. This finds fields
+        in the data that are valid fields for the model, and creates an object
+        with those fields.
+
+        No validation is done, and no database queries are made.
+        """
         valid_fields = [
             f
             for f in cls._meta.get_fields()
@@ -210,12 +217,13 @@ class UnretrievedModelMixin(object):
         return obj
 
     @classmethod
-    def make_dummy_obj_from_query_params(cls, param_dict: dict) -> object:
+    def make_unretrieved_obj_from_query_params(cls, param_dict: dict) -> object:
         """
         Turn query parameters (usually request.query_params) into a dummy object.
 
         Helpful for "list" action, to allow us to check if the provided user can
-        do the action on a related object, as defined in `obj_action_perm_map`.
+        do the action on a related object, as defined in
+        `policies.ACTION_POLICIES[<model_label>]["object"]`.
 
         :param param_dict: Parameters, in dictionary form.
         :return: models.Model object (or list of such objects)
