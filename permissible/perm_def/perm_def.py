@@ -35,6 +35,7 @@ class PermDef:
         obj_path: Optional[str] = None,
         obj_filter: Optional[tuple[str, str, Any]] = None,
         global_condition_checker: Optional[Callable[[object, object], bool]] = None,
+        allow_blank: bool = False,
         model_label: Optional[str] = None,
     ):
         """
@@ -48,6 +49,7 @@ class PermDef:
         :param global_condition_checker: A function/str that takes the user and additional
         context, and returns a boolean, which is AND'd with the result of user.has_perms to
         return whether permission is successful.
+        :param allow_blank: If True, the obejct permission will pass if the object is None.
         :param model_label: A string that is the label of the model to be used in the permission
         check. If not provided, the model of the input object will be used. This should usually
         be `None` unless you are checking permissions on a model referenced from the context object
@@ -56,6 +58,7 @@ class PermDef:
         self.short_perm_codes = short_perm_codes
         self.obj_filter = obj_filter
         self.global_condition_checker = global_condition_checker
+        self.allow_blank = allow_blank
         self.model_label = model_label
 
         # Parse the obj_path
@@ -138,14 +141,17 @@ class PermDef:
             obj_pk = context.get(self.key_to_obj_in_context)
             obj_class = apps.get_model(self.model_label)
             obj = obj_class.objects.get(pk=obj_pk)
-            if not obj or not obj.pk:
-                return False
 
         # ...or get by following the attribute path from the input object
         elif self.obj_path:
             obj = obj.get_unretrieved(self.obj_path)
+
+        # No object was discovered (i.e. via obj_path or context), which means
+        # no more checks are possible. The question is whether to allow or deny...
+        if self.key_to_obj_in_context or self.obj_path:
             if not obj or not obj.pk:
-                return False
+                # ...which depends on self.allow_blank
+                return self.allow_blank
 
         # Check object conditions
         if not self._check_obj_filter(obj, context):

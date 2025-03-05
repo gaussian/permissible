@@ -8,7 +8,6 @@ from django.db import models
 
 # Import the abstract models to be tested.
 from permissible.models import PermDomain, PermDomainRole, PermDomainMember
-from permissible.perm_def import p
 
 #
 # Dummy concrete models for testing
