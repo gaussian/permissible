@@ -123,7 +123,8 @@ class PermDomain(BasePermDomain):
 
     def add_user_to_groups(self, user, roles=None):
         group_ids = self.get_group_ids_for_roles(roles=roles)
-        print(f"Adding user {user} to groups {group_ids}")
+        if settings.DEBUG:
+            print(f"Adding user {user} to groups {group_ids}")
         user.groups.add(*group_ids)
 
     def remove_user_from_groups(self, user, roles=None):
