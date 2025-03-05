@@ -9,7 +9,7 @@ from permissible.perm_def import p
 
 # Mock ACTION_POLICIES for testing
 MOCK_ACTION_POLICIES = {
-    "testapp.policymodel": {
+    "testapp.PolicyModel": {
         "global": {
             "list": p(["view"]),
             "retrieve": p(["view"]),
@@ -19,7 +19,7 @@ MOCK_ACTION_POLICIES = {
             "update": p(["change"]),
         },
     },
-    "testapp.policyrelated": {
+    "testapp.PolicyRelated": {
         "global": {
             "list": p(["view"]),
         },
@@ -117,7 +117,7 @@ class TestPolicyLookup(unittest.TestCase):
         result = PolicyModel.get_policies()
 
         # Verify we get the correct policies
-        self.assertEqual(result, MOCK_ACTION_POLICIES["testapp.policymodel"])
+        self.assertEqual(result, MOCK_ACTION_POLICIES["testapp.PolicyModel"])
 
     @patch("permissible.models.policy_lookup.PolicyLooupMixin.get_app_policies_module")
     def test_get_policies_different_models(self, mock_get_app_policies_module):
@@ -134,10 +134,10 @@ class TestPolicyLookup(unittest.TestCase):
         # Verify we get different policies for different models
         self.assertNotEqual(test_model_policies, related_model_policies)
         self.assertEqual(
-            test_model_policies, MOCK_ACTION_POLICIES["testapp.policymodel"]
+            test_model_policies, MOCK_ACTION_POLICIES["testapp.PolicyModel"]
         )
         self.assertEqual(
-            related_model_policies, MOCK_ACTION_POLICIES["testapp.policyrelated"]
+            related_model_policies, MOCK_ACTION_POLICIES["testapp.PolicyRelated"]
         )
 
     @patch("permissible.models.policy_lookup.PolicyLooupMixin.get_app_policies_module")

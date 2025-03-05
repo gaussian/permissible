@@ -401,6 +401,40 @@ class TestPermDef(unittest.TestCase):
         self.assertEqual(combined.operator, "and")
         self.assertEqual(combined.perm_defs, [perm_def1, perm_def2])
 
+    def test_allow_blank_functionality(self):
+        """Test the allow_blank parameter in PermDef."""
+        # Create a user with permissions for testing
+        user = DummyUser(id=1, perms_result=True)
+
+        # Create a base object with no "related" field (None)
+        base_obj = DummyObj(pk=123)
+
+        # Create a base object with "related" field that has no PK
+        obj_without_pk = DummyObj(pk=None)
+        base_obj_with_related = DummyObj(pk=456, related=obj_without_pk)
+
+        # Case 1: Default behavior (allow_blank=False)
+        # Should fail when object is None
+        perm_def = PermDef(short_perm_codes=["view"], obj_path="nonexistent")
+        self.assertFalse(perm_def.check_obj(base_obj, user))
+
+        # Should fail when object has no PK
+        perm_def = PermDef(short_perm_codes=["view"], obj_path="related")
+        self.assertFalse(perm_def.check_obj(base_obj_with_related, user))
+
+        # Case 2: With allow_blank=True
+        # Should proceed to _check_perms when object is None
+        perm_def = PermDef(
+            short_perm_codes=["view"], obj_path="nonexistent", allow_blank=True
+        )
+        self.assertTrue(perm_def.check_obj(base_obj, user))
+
+        # Should proceed to _check_perms when object has no PK
+        perm_def = PermDef(
+            short_perm_codes=["view"], obj_path="related", allow_blank=True
+        )
+        self.assertTrue(perm_def.check_obj(base_obj_with_related, user))
+
 
 if __name__ == "__main__":
     unittest.main()
