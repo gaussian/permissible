@@ -178,7 +178,7 @@ class LazyModelResolverMixin(object):
 
         Helpful for non-detail, non-list actions (in particular, the "create"
         action), to allow us to check if the provided user can do the action via
-        `obj_action_perm_map`.
+        `policies.ACTION_POLICIES[<model_label>]["object"]`.
 
         :param obj_dict_or_list: Model data, in dictionary form (or list of
         dictionaries).
@@ -222,7 +222,8 @@ class LazyModelResolverMixin(object):
         Turn query parameters (usually request.query_params) into a dummy object.
 
         Helpful for "list" action, to allow us to check if the provided user can
-        do the action on a related object, as defined in `obj_action_perm_map`.
+        do the action on a related object, as defined in
+        `policies.ACTION_POLICIES[<model_label>]["object"]`.
 
         :param param_dict: Parameters, in dictionary form.
         :return: models.Model object (or list of such objects)

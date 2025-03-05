@@ -37,15 +37,13 @@ class TestFilterIntegrationModel(PermissibleMixin, models.Model):
         perm_def_is_active = p([], obj_filter=("status", "==", "active"))
         return {
             "global": {
-                "list": ALLOW_ALL,
-                "custom_list": ALLOW_ALL,
                 "retrieve": ALLOW_ALL,
+                "custom_list": ALLOW_ALL,
             },
             "object": {
-                # List filtering will use this for PermissibleFilter
-                "list": p(["view"]) | (IS_PUBLIC & perm_def_is_active),
+                # List filtering will use "retrieve"" for PermissibleFilter
+                "retrieve": p(["view"]) | (IS_PUBLIC & perm_def_is_active),
                 "custom_list": p(["view"]) | (IS_PUBLIC & perm_def_is_active),
-                "retrieve": p(["view"]) | IS_PUBLIC,
             },
         }
 

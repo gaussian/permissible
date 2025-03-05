@@ -22,8 +22,8 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
     Restricts DRF access to on an object using advanced configuration.
 
     Models that are to be protected in this way should use `PermissibleMixin`, and
-    the necessary permissions should be configured using `global_action_perm_map`
-    and `obj_action_perm_map` from that mixin.
+    the necessary permissions should be configured using
+    `policies.ACTION_POLICIES[<model_label>]`.
 
     Must pass global AND object permissions.
 

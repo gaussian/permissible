@@ -130,7 +130,6 @@ class TestContent(PermissibleMixin, models.Model):
         return {
             "domains": ["team"],
             "global": {
-                "list": p(["view"]),
                 "create": p(["add"]),
                 "retrieve": p(["view"]),
                 "update": p(["change"]),
@@ -138,7 +137,6 @@ class TestContent(PermissibleMixin, models.Model):
                 "destroy": p(["delete"]),
             },
             "object": {
-                "list": p(["view_on"], "team"),
                 "retrieve": p(["view_on"], "team"),
                 "update": p(["change_on"], "team"),
                 "partial_update": p(["change_on"], "team"),

@@ -23,17 +23,18 @@ class PermissibleFilter(CheckViewConfigMixin, filters.BaseFilterBackend):
     ACTION_POLICIES = {
         "surveys.Survey": {
             "object": {
-                "list": p(["view"], "project"),
+                "retrieve": p(["view"], "project"),
                 ...
             },
         }
     }
     ```
 
+    Note that if the "list" action policy is not defined, the "retrieve" policy
+    will be used for list actions.
+
     Note that this filter is expected to work in conjunction with the permissions
-    framework. The "list" permissions will already have been checked by default
-    if you are using `PermissiblePerms`. Assertions guarantee that
-    `PermissiblePerms` is being used.
+    framework. Assertions guarantee that `PermissiblePerms` is being used.
 
     THIS FILTER DOES NOT CHECK PERMISSIONS OR FILTER DOWN TO PERMITTED OBJECTS,
     instead it relies on the ACTION_POLICIES being correctly configured to
@@ -50,8 +51,11 @@ class PermissibleFilter(CheckViewConfigMixin, filters.BaseFilterBackend):
         self._check_view_config(view)
 
         # Get permission config for us to filter down the queryset
+        # (use "retrieve" if no permission is defined for "list")
         model_class: PermissibleMixin = view.base_model
         perm_def = model_class.get_object_perm_def(view.action)
+        if not perm_def and view.action == "list":
+            perm_def = model_class.get_object_perm_def("retrieve")
 
         assert (
             perm_def

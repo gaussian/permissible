@@ -4,16 +4,10 @@ from .perm_def import p, IS_AUTHENTICATED, DENY_ALL, ALLOW_ALL
 # authenticated and unauthenticated users. Other actions are denied.
 POLICY_PUBLIC_READ_ONLY = {
     "create": DENY_ALL,
-    "list": ALLOW_ALL,
     "retrieve": ALLOW_ALL,
     "update": DENY_ALL,
     "partial_update": DENY_ALL,
     "destroy": DENY_ALL,
-}
-
-# POLICY: Allows listing of objects if the user is authenticated.
-POLICY_LIST_IF_AUTHENTICATED = {
-    "list": IS_AUTHENTICATED,
 }
 
 # POLICY: Allows all standard DRF actions on objects. Use this
@@ -23,7 +17,6 @@ POLICY_LIST_IF_AUTHENTICATED = {
 # denied.
 POLICY_NO_RESTRICTION = {
     "create": ALLOW_ALL,
-    "list": ALLOW_ALL,
     "retrieve": ALLOW_ALL,
     "update": ALLOW_ALL,
     "partial_update": ALLOW_ALL,
@@ -37,7 +30,6 @@ POLICY_NO_RESTRICTION = {
 # global or object-level, then the action is denied.
 POLICY_AUTHENTICATED = {
     "create": IS_AUTHENTICATED,
-    "list": IS_AUTHENTICATED,
     "retrieve": IS_AUTHENTICATED,
     "update": IS_AUTHENTICATED,
     "partial_update": IS_AUTHENTICATED,
@@ -49,7 +41,6 @@ POLICY_AUTHENTICATED = {
 # the "add" permission. Use this for global permissions.
 POLICY_CREATE_RESTRICTED = {
     "create": p(["add"]),
-    "list": IS_AUTHENTICATED,
     "retrieve": IS_AUTHENTICATED,
     "update": IS_AUTHENTICATED,
     "partial_update": IS_AUTHENTICATED,
@@ -60,7 +51,6 @@ POLICY_CREATE_RESTRICTED = {
 # object listing to unauthenticated users.
 POLICY_DENY_ALL = {
     "create": DENY_ALL,
-    "list": DENY_ALL,
     "retrieve": DENY_ALL,
     "update": DENY_ALL,
     "partial_update": DENY_ALL,
@@ -72,7 +62,6 @@ POLICY_DENY_ALL = {
 # update, and deletion if the user has the appropriate permissions.
 POLICY_DEFAULT_NO_CREATE = {
     "create": DENY_ALL,
-    "list": p(["view"]),
     "retrieve": p(["view"]),
     "update": p(["change"]),
     "partial_update": p(["change"]),
@@ -86,7 +75,6 @@ POLICY_DEFAULT_NO_CREATE = {
 # `POLICY_CREATE_RESTRICTED` for global permissions.
 POLICY_DEFAULT_ALLOW_CREATE = {
     "create": ALLOW_ALL,
-    "list": p(["view"]),
     "retrieve": p(["view"]),
     "update": p(["change"]),
     "partial_update": p(["change"]),
@@ -97,7 +85,6 @@ POLICY_DEFAULT_ALLOW_CREATE = {
 # default permissions work in Django without object-level permissions.
 POLICY_DEFAULT_GLOBAL = {
     "create": p(["add"]),
-    "list": p(["view"]),
     "retrieve": p(["view"]),
     "update": p(["change"]),
     "partial_update": p(["change"]),
@@ -125,7 +112,6 @@ FULL_POLICY_GLOBAL_ONLY = {
 def make_simple_domain_owned_policy(domain_field_name: str):
     return {
         "create": p(["change"], domain_field_name),
-        "list": p(["view"], domain_field_name),
         "retrieve": p(["view"], domain_field_name),
         "update": p(["change"], domain_field_name),
         "partial_update": p(["change"], domain_field_name),
@@ -138,7 +124,6 @@ def make_simple_domain_owned_policy(domain_field_name: str):
 def make_domain_owned_policy(domain_attr_path: str):
     return {
         "create": p(["add_on"], domain_attr_path),
-        "list": p(["view"], domain_attr_path),
         "retrieve": p(["view"], domain_attr_path),
         "update": p(["change_on"], domain_attr_path),
         "partial_update": p(["change_on"], domain_attr_path),
@@ -153,7 +138,7 @@ def make_domain_owned_policy(domain_attr_path: str):
 # to the user who is the user field of this PermDomainMember.
 def make_domain_member_policy(domain_name: str):
     perm_def_self = p(
-        None,
+        [],
         obj_filter=("user_id", "==", "_context.request.user.id"),
     )
     perm_def_admin = p(
@@ -163,74 +148,8 @@ def make_domain_member_policy(domain_name: str):
     )
     return {
         "create": DENY_ALL,
-        "list": DENY_ALL,
         "retrieve": perm_def_self | perm_def_admin,
         "update": perm_def_self | perm_def_admin,
         "partial_update": perm_def_self | perm_def_admin,
         "destroy": perm_def_admin,
     }
-
-
-# class PermissibleListIfAuthPerms(PermissibleMixin):
-
-#     global_action_perm_map = {"list": IS_AUTHENTICATED}
-
-
-# class PermissibleDenyPerms(PermissibleListIfAuthPerms):
-#     """
-#     A default configuration of permissions that denies all standard DRF actions
-#     on objects, and denies object listing to unauthenticated users.
-
-#     Note that no global checks are done.
-#     Note that no "list" permission checks are done (permissions checks should
-#     instead be done on the actual object, in the "list" action, via
-#     `permissible.PermissibleDirectFilter`).
-#     """
-
-#     obj_action_perm_map = {
-#         "create": DENY_ALL,
-#         "retrieve": DENY_ALL,
-#         "update": DENY_ALL,
-#         "partial_update": DENY_ALL,
-#         "destroy": DENY_ALL,
-#     }
-
-
-# class PermissibleDefaultPerms(PermissibleListIfAuthPerms):
-#     """
-#     A default configuration of permissions that ONLY checks for object-level
-#     permissions on the object that we are trying to access.
-
-#     Note that no global checks are done.
-#     Note that no "list" permission checks are done (inaccessible objects
-#     should be filtered out instead).
-#     No "create" permission, this should be overridden if needed.
-#     """
-
-#     obj_action_perm_map = {
-#         "create": DENY_ALL,
-#         "retrieve": p(["view"]),
-#         "update": p(["change"]),
-#         "partial_update": p(["change"]),
-#         "destroy": p(["delete"]),
-#     }
-
-
-# class PermissibleDefaultWithGlobalCreatePerms(PermissibleDefaultPerms):
-#     """
-#     A default configuration of permissions that ONLY checks for object-level
-#     permissions on the object that we are trying to access, and additionally
-#     requires (for creation) that global "add" permission exists for this user.
-
-#     Note that no "list" permission checks are done (inaccessible objects
-#     should be filtered out instead).
-#     """
-
-#     global_action_perm_map = {
-#         "create": p(["add"]),
-#     }
-
-#     obj_action_perm_map = {
-#         **PermissibleDefaultPerms.obj_action_perm_map,
-#         "create": ALLOW_ALL,
-#     }

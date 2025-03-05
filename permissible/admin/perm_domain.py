@@ -84,7 +84,7 @@ class BasePermissibleViewMixin:
 
         return role_to_user_ids_sorted
 
-    def get_perms_for_obj(self, obj):
+    def get_users_to_perms_for_obj(self, obj):
         """
         Get user->perms mapping for a single object
         (use guardian shortcut to populate object permissions if can import)
@@ -185,7 +185,7 @@ class PermDomainAdminMixin(BasePermissibleViewMixin):
 
         # This is the mapping of user object to permissions list for this object
         # but note that this is only for users that have permissions on the object
-        users_to_perms = self.get_perms_for_obj(obj)
+        users_to_perms = self.get_users_to_perms_for_obj(obj)
 
         # Add users that have roles but no permissions
         user_ids_from_roles = set(chain(*role_to_user_id.values()))
@@ -285,7 +285,7 @@ class UserPermDomainAdminMixin(BasePermissibleViewMixin):
         domain_to_roles = {
             domain: {
                 "roles": self.get_role_to_user_id(domain),
-                "perms": self.get_perms_for_obj(domain).get(user, []),
+                "perms": self.get_users_to_perms_for_obj(domain).get(user, []),
             }
             for domain in perm_domains
         }

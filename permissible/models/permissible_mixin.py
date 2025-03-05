@@ -95,9 +95,8 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
     def has_global_permission(cls, user: PermissionsMixin, action: str, context=None):
         """
         Check if the provided user can access this action for this model, by checking
-        the `global_action_perm_map`.
-
-        In the `global_action_perm_map`, every action has a list of PermDef objects,
+        the `policies.ACTION_POLICIES[<model_label>]["global"]`.
+        In that dictionary, every action has a list of PermDef objects,
         only ONE of which must be satisfied to result in permission success.
 
         In order for a PermDef to be satisfied, the user must have all of global
@@ -121,8 +120,12 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
             return True
 
         # Get the PermDef for this action (global permissions)
-        # Deny if no EXPLICIT permission check is defined
+        # (use "retrieve" if no permission is defined for "list")
         perm_def = cls.get_global_perms_def(action)
+        if not perm_def and action == "list":
+            perm_def = cls.get_global_perms_def("retrieve")
+
+        # Deny if no EXPLICIT permission check is defined
         assert (
             perm_def is not None
         ), f"No global permission defined for {cls} action '{action}' in `policies.ACTION_POLICIES`"
@@ -137,10 +140,9 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
     def has_object_permission(self, user: PermissionsMixin, action: str, context=None):
         """
         Check if the provided user can access this action for this object, by checking
-        the `obj_action_perm_map`. This check is done in ADDITION to the global check
-        above, usually.
-
-        In the `obj_action_perm_map`, every action has a list of PermDef objects.
+        the `policies.ACTION_POLICIES[<model_label>]["object"]`.
+        This check is done in ADDITION to the global check  above, usually.
+        In that dictionary, every action has a list of PermDef objects.
         Whether ANY or ALL of them must be satisfied is determined by the `perm_def_mode`.
 
         In order for a PermDef to be satisfied, the following must BOTH be true:

@@ -38,7 +38,6 @@ class TestPermIntegrationModel(PermissibleMixin, models.Model):
         """Define policies for test model"""
         return {
             "global": {
-                "list": ALLOW_ALL,
                 "create": p(["add"]),
                 "retrieve": ALLOW_ALL,
                 "update": ALLOW_ALL,
@@ -47,7 +46,6 @@ class TestPermIntegrationModel(PermissibleMixin, models.Model):
                 "custom_action": ALLOW_ALL,
             },
             "object": {
-                "list": p(["view"]),
                 "create": ALLOW_ALL,
                 "retrieve": p(["view"]) | IS_PUBLIC,
                 "update": p(["change"]),
