@@ -46,9 +46,10 @@ class PolicyLooupMixin:
             return {}
 
         # Get the full model name for lookup
-        full_model_name = f"{cls._meta.app_label}.{cls._meta.model_name}"
+        full_model_name = f"{cls._meta.app_label}.{cls.__name__}"
 
         # Return empty dict if model not in policies
+
         return policies.get(
             full_model_name, {}
         ).copy()  # Return a copy to avoid cache issues
