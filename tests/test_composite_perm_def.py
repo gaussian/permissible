@@ -32,7 +32,7 @@ class MockManager:
 
 class DummyShortPermsMixin:
     @classmethod
-    def get_permission_codenames(cls, short_perm_codes, include_app_label=True):
+    def get_permission_codenames(cls, short_perm_codes, include_app_label):
         if short_perm_codes is None:
             return []
         app_label = "testapp" if include_app_label else ""

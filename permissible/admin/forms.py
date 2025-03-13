@@ -149,9 +149,9 @@ class BaseRoleBasedForm(forms.Form):
 
                 # Apply the changes using the appropriate method
                 method = (
-                    domain_obj.add_user_to_groups
+                    domain_obj.assign_roles_to_user
                     if add_roles
-                    else domain_obj.remove_user_from_groups
+                    else domain_obj.remove_roles_from_user
                 )
                 method(user=target_user, roles=roles_to_change)
 
@@ -167,7 +167,7 @@ class BaseRoleBasedForm(forms.Form):
         Uses django-guardian's permission system to verify the user has the
         specific 'change_permission' permission on the given object.
         """
-        permission = obj.get_permission_codename("change_permission")
+        permission = obj.get_permission_codename("change_permission", True)
         return user.has_perm(permission, obj)
 
 

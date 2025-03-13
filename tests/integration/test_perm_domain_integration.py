@@ -183,15 +183,15 @@ class PermDomainIntegrationTest(TestCase):
 
         # Add users to teams with different roles
         # For Team 1
-        cls.team1.add_user_to_groups(cls.team_owner, roles=["own"])
-        cls.team1.add_user_to_groups(cls.team_admin, roles=["adm"])
-        cls.team1.add_user_to_groups(cls.team_contributor, roles=["con"])
-        cls.team1.add_user_to_groups(cls.team_viewer, roles=["view"])
-        cls.team1.add_user_to_groups(cls.team_member, roles=["mem"])
+        cls.team1.assign_roles_to_user(cls.team_owner, roles=["own"])
+        cls.team1.assign_roles_to_user(cls.team_admin, roles=["adm"])
+        cls.team1.assign_roles_to_user(cls.team_contributor, roles=["con"])
+        cls.team1.assign_roles_to_user(cls.team_viewer, roles=["view"])
+        cls.team1.assign_roles_to_user(cls.team_member, roles=["mem"])
 
         # For Team 2 - making contributor an admin here
-        cls.team2.add_user_to_groups(cls.team_owner, roles=["own"])
-        cls.team2.add_user_to_groups(cls.team_contributor, roles=["adm"])
+        cls.team2.assign_roles_to_user(cls.team_owner, roles=["own"])
+        cls.team2.assign_roles_to_user(cls.team_contributor, roles=["adm"])
 
         # Create test content in teams
         cls.content1 = TestContent.objects.create(

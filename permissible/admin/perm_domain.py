@@ -308,7 +308,9 @@ class UserPermDomainAdminMixin(BasePermissibleViewMixin):
             context_extras,
         )
 
-    def permissible_groups_link(self, obj):
+    readonly_fields = ("permissible_groups_links",)
+
+    def permissible_groups_links(self, obj):
         """Generate links for each configured PermDomain type"""
         links = []
         for perm_type in self.domain_class_dict.keys():
@@ -319,4 +321,6 @@ class UserPermDomainAdminMixin(BasePermissibleViewMixin):
             links.append(
                 format_html('<a href="{}">{}</a>', url, f"Edit {perm_type} permissions")
             )
+        if not links:
+            return "None"
         return format_html(" | ".join(links))

@@ -212,7 +212,7 @@ class PermDef:
         # Pre-check didn't give an auto-success or failure:
         # Filter down to the objects that pass permissions
         if perm_precheck is None:
-            perms = obj_class.get_permission_codenames(self.short_perm_codes)
+            perms = obj_class.get_permission_codenames(self.short_perm_codes, True)
             obj_queryset = get_objects_for_user(
                 klass=obj_queryset,
                 user=user,
@@ -347,7 +347,7 @@ class PermDef:
             return perm_precheck
 
         # Get full permission codenames
-        perms = obj_class.get_permission_codenames(self.short_perm_codes)
+        perms = obj_class.get_permission_codenames(self.short_perm_codes, True)
 
         # Check perms (if obj is None, we are checking global perms)
         return user.has_perms(perms, obj)
