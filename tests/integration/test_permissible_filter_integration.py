@@ -61,7 +61,6 @@ class FilterTestModelViewSet(ModelViewSet):
     serializer_class = FilterTestModelSerializer
     permission_classes = [PermissiblePerms]
     filter_backends = [PermissibleFilter]
-    base_model = TestFilterIntegrationModel  # Required for PermissibleFilter
 
 
 @override_settings(

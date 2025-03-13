@@ -45,7 +45,8 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
         """
 
         # We require PermissibleFilter to be used on the view
-        self._check_view_config(view)
+        queryset = self._queryset(view)
+        self._check_view_config(view, queryset)
 
         assert getattr(
             request, "user", None
@@ -56,7 +57,7 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
         if getattr(view, "_ignore_model_permissions", False):
             return True
 
-        model_class: Type[PermissibleMixin] = self._queryset(view).model
+        model_class: Type[PermissibleMixin] = queryset.model
         perm_check_kwargs = {
             "user": request.user,
             "action": view.action,

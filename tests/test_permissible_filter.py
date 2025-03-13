@@ -83,7 +83,6 @@ class DummyView:
 
     def __init__(self, action="list", queryset=None, detail=False):
         self.action = action
-        self.base_model = DummyModel
         self.queryset = queryset or MagicMock(spec=QuerySet)
         self.queryset.model = DummyModel
         self.detail = detail

@@ -107,8 +107,8 @@ class DummyView:
         self.data = data or []
         self.LIST_ACTIONS = list_actions if list_actions is not None else ("list",)
         self.permission_classes = [PermissiblePerms]
+        self.queryset = DummyQuerySet()
         self._permissible_filter = True  # Simulate config check
-        self.base_model = DummyModel  # Model class reference
         # Use actual PermissibleFilter class instead of string
         self.filter_backends = [PermissibleFilter]
 
@@ -323,7 +323,7 @@ class TestPermissiblePerms(unittest.TestCase):
         perms = self.get_permission_instance()
 
         # Should not raise an exception
-        perms._check_view_config(view)
+        perms._check_view_config(view, view.queryset)
 
     def test_check_view_config_failure(self):
         # Test that _check_view_config fails with incorrectly configured view
@@ -335,18 +335,22 @@ class TestPermissiblePerms(unittest.TestCase):
 
         # Should raise an exception
         with self.assertRaises(AssertionError):
-            perms._check_view_config(view)
+            perms._check_view_config(view, view.queryset)
 
-    def test_check_view_config_failure_missing_base_model(self):
-        # Test that _check_view_config fails when base_model is missing
+    def test_check_view_config_failure_missing_queryset_model(self):
+        # Test that _check_view_config fails when queryset.model is missing
         view = DummyView()
-        # Remove the base_model attribute
-        delattr(view, "base_model")
+        # Remove the model attribute
+        old_model = view.queryset.model
+        view.queryset.model = None
         perms = self.get_permission_instance()
 
         # Should raise an assertion error
         with self.assertRaises(AssertionError):
-            perms._check_view_config(view)
+            perms._check_view_config(view, view.queryset)
+
+        # Restore the model attribute
+        view.queryset.model = old_model
 
 
 if __name__ == "__main__":

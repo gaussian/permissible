@@ -48,11 +48,11 @@ class PermissibleFilter(CheckViewConfigMixin, filters.BaseFilterBackend):
             return queryset
 
         # We require PermissiblePerms to be used on the view
-        self._check_view_config(view)
+        self._check_view_config(view, queryset)
 
         # Get permission config for us to filter down the queryset
         # (use "retrieve" if no permission is defined for "list")
-        model_class: PermissibleMixin = view.base_model
+        model_class: PermissibleMixin = queryset.model
         perm_def = model_class.get_object_perm_def(view.action)
         if not perm_def and view.action == "list":
             perm_def = model_class.get_object_perm_def("retrieve")
