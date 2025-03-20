@@ -188,7 +188,7 @@ class PermDef:
             obj_class = chain_information["final_model_class"]
             # Query path is the path from the original object for filtering
             # eg "survey__project__team_id" for the Question model above
-            obj_query_path = chain_information["query_path"]
+            obj_query_path = chain_information["full_query_path"]
             # Get the queryset of all objects
             obj_queryset = obj_class.objects.all()
 
@@ -227,9 +227,9 @@ class PermDef:
             obj_pks_queryset = obj_queryset.values_list("pk")
             # Get the query path to the primary key attribute
             # eg "survey__project__team_id__in" for the Question model above
-            obj_pk_query_path = f"{obj_query_path}__in"
+            obj_pk_root_query_path = f"{obj_query_path}__in"
             # Filter the original queryset down to the objects that pass permissions
-            queryset = queryset.filter(**{obj_pk_query_path: obj_pks_queryset})
+            queryset = queryset.filter(**{obj_pk_root_query_path: obj_pks_queryset})
 
         # Otherwise, we can just return the queryset we were manipulating
         else:

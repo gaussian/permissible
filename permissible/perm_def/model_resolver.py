@@ -50,13 +50,13 @@ class LazyModelResolverMixin(object):
 
         # If a query path is set, use it to find the final primary key, i.e.
         # the primary key of the final model in the chain.
-        query_path = res.get("query_path", None)
-        if query_path:
+        root_query_path = res.get("root_query_path", None)
+        if root_query_path:
             # Filter to root models with the root PK, then use values_list
             # to get the final PK (nested with "__" if appropriate).
             results = list(
                 root_model_class.objects.filter(pk=root_pk).values_list(
-                    res["query_path"], flat=True
+                    root_query_path, flat=True
                 )
             )
             if len(results) != 1:
@@ -101,7 +101,7 @@ class LazyModelResolverMixin(object):
         - final_attname: the attribute name for the final field (for example, "team_id").
         - root_field: the field of the first attribute in the chain, whose model
                             will be queried.
-        - query_path: the lookup string (e.g. "chainer__team_id") to be used with
+        - root_query_path: the lookup string (e.g. "chainer__team_id") to be used with
                         .values_list() on the root model.
 
         This helper unifies the chain resolution so that both direct (no DB query) and query
@@ -118,7 +118,7 @@ class LazyModelResolverMixin(object):
                 * Chain: ["experiment", "team"]
                 * The root attribute "experiment" gives root_model_class and root_pk (from self.experiment_id).
                 * The final attribute "team" yields final_model_class and final_attname ("team_id").
-                * query_path becomes "team_id".
+                * root_query_path becomes "team_id".
                 * DB hit will be needed.
 
         - Multi-level chain "chainer_session.chainer.team":
@@ -126,7 +126,7 @@ class LazyModelResolverMixin(object):
                 * The root attribute "chainer_session" gives root_model_class and root_pk (from self.chainer_session_id).
                 * The penultimate step ("chainer") is traversed.
                 * The final attribute "team" yields final_model_class and final_attname.
-                * query_path becomes "chainer__team_id".
+                * root_query_path becomes "chainer__team_id".
                 * DB hit will be needed.
         """
         chain = attr_key.split(".")
@@ -144,27 +144,25 @@ class LazyModelResolverMixin(object):
             current_model = field.related_model
 
         # 'field' now holds the final attribute in the chain.
-        final_model_class = (
-            field.related_model
-        )  # The model class for the final attribute.
+
+        # The model class for the final attribute.
+        final_model_class = field.related_model
         final_attname = field.attname  # e.g. "team_id"
+
+        # Replace the last attribute in the chain with the final attribute name.
+        chain_with_final_attname = chain[:-1] + [final_attname]
 
         result = {
             "final_model_class": final_model_class,
             "root_field": root_field,
+            "full_query_path": "__".join(chain_with_final_attname),
         }
 
         # Build the query lookup path using intermediate attributes (if any).
         # For chain ["chainer_session", "chainer", "team"]:
-        #   penultimate_path becomes "chainer" and query_path becomes "chainer__team_id".
+        #   penultimate_path becomes "chainer" and root_query_path becomes "chainer__team_id".
         if len(chain) > 1:
-            penultimate_path = "__".join(chain[1:-1])
-            query_path = (
-                f"{penultimate_path}__{final_attname}"
-                if penultimate_path
-                else final_attname
-            )
-            result["query_path"] = query_path
+            result["root_query_path"] = "__".join(chain_with_final_attname[1:])
 
         return result
 
