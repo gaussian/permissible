@@ -13,7 +13,7 @@ def assign_short_perms(short_perms, user_or_group, obj: BasePermDefObj):
     from guardian.shortcuts import assign_perm
 
     for short_perm in short_perms:
-        perm = obj.get_permission_codename(short_perm)
+        perm = obj.get_permission_codename(short_perm, True)
         assign_perm(perm, user_or_group, obj)
 
 

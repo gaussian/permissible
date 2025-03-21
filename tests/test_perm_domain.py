@@ -42,7 +42,7 @@ class DummyDomain(PermDomain):
         return self.name
 
     @classmethod
-    def get_permission_codenames(cls, short_perm_codes, include_app_label=True):
+    def get_permission_codenames(cls, short_perm_codes, include_app_label):
         # For testing purposes, simply return a dummy set of permission strings.
         # Now handling the include_app_label parameter
         if include_app_label:
@@ -227,8 +227,8 @@ class PermDomainTests(TestCase):
 
     def test_add_and_remove_user_to_groups(self):
         """
-        Check that add_user_to_groups adds the appropriate groups to a user,
-        and remove_user_from_groups removes them.
+        Check that assign_roles_to_user adds the appropriate groups to a user,
+        and remove_roles_from_user removes them.
         """
         domain = self.create_domain_with_mocks("Test Domain 3")
         user = self.normal_user
@@ -237,14 +237,14 @@ class PermDomainTests(TestCase):
         user.groups.clear()
 
         # Add user to groups and verify
-        domain.add_user_to_groups(user)
+        domain.assign_roles_to_user(user=user, roles=None)
         expected_ids = list(domain.get_group_ids_for_roles())
         user_group_ids = list(user.groups.values_list("id", flat=True))
         for gid in expected_ids:
             self.assertIn(gid, user_group_ids)
 
         # Remove user from groups and verify
-        domain.remove_user_from_groups(user)
+        domain.remove_roles_from_user(user, None)
         user_group_ids_after = list(user.groups.values_list("id", flat=True))
         for gid in expected_ids:
             self.assertNotIn(gid, user_group_ids_after)

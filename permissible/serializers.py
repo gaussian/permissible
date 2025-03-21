@@ -32,7 +32,8 @@ class PermissibleObjectAssignMixin(ObjectPermissionsAssignmentMixin):
         model_class = self.instance.__class__
         django_short_perm_codes = ["view", "change", "delete"]
         permissions = [
-            model_class.get_permission_codename(pc) for pc in django_short_perm_codes
+            model_class.get_permission_codename(pc, True)
+            for pc in django_short_perm_codes
         ]
         extra_perms = [perm for perm, _ in model_class._meta.permissions]
         return {
@@ -54,6 +55,9 @@ class PermDomainObjectAssignMixin(Serializer):
         result = super().save(**kwargs)
 
         if not exists:
-            self.instance.add_user_to_groups(user=self.context["request"].user)
+            self.instance.assign_roles_to_user(
+                user=self.context["request"].user,
+                roles=None,
+            )
 
         return result

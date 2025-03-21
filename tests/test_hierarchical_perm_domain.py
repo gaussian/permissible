@@ -59,7 +59,7 @@ class DummyHierarchicalDomainRole(PermDomainRole):
         unique_together = ("group", "domain")
 
 
-class DummyHierarchicalDomainMember(DummyHierarchicalDomain):
+class DummyHierarchicalDomainMember(PermDomainMember):
     """
     A concrete PermDomainMember. It joins HierarchicalPermDomain to a User.
     """

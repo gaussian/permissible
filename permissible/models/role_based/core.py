@@ -9,7 +9,7 @@ from abc import abstractmethod
 from typing import Iterable, Optional, Type
 
 from django.conf import settings
-from django.contrib.auth.models import Group, AbstractBaseUser
+from django.contrib.auth.models import Group, AbstractBaseUser, PermissionsMixin
 from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
@@ -17,7 +17,6 @@ from django.dispatch import receiver
 from .base import AbstractModelMetaclass, BasePermDomain
 from ..permissible_mixin import PermissibleMixin
 from ..utils import clear_permissions_for_class, update_permissions_for_object
-from permissible.perm_def import PermDef
 from permissible.utils.signals import get_subclasses
 
 
@@ -110,24 +109,35 @@ class PermDomain(BasePermDomain):
         domain_role_model_class: Type[PermDomainRole] = (
             self.get_role_join_rel().related_model
         )
-        domain_field = domain_role_model_class.get_domain_field()
+        domain_field = domain_role_model_class.get_domain_field()  # e.g. `team`
 
-        role_choices = domain_role_model_class._meta.get_field("role").choices
-        assert isinstance(role_choices, Iterable)
-        roles = roles if roles is not None else [role for role, _ in role_choices]
+        domain_role_filter = {domain_field.attname: self.pk}
 
-        return domain_role_model_class.objects.filter(
-            role__in=roles,
-            **{domain_field.attname: self.pk},
-        ).values_list("group_id", flat=True)
+        if roles is not None:
+            domain_role_filter["role__in"] = roles
 
-    def add_user_to_groups(self, user, roles=None):
+        return domain_role_model_class.objects.filter(**domain_role_filter).values_list(
+            "group_id", flat=True
+        )
+
+    def assign_roles_to_user(
+        self,
+        user: PermissionsMixin,
+        roles: Optional[list[str]],
+    ):
         group_ids = self.get_group_ids_for_roles(roles=roles)
-        print(f"Adding user {user} to groups {group_ids}")
+        if settings.DEBUG:
+            print(f"Adding user {user} to groups {group_ids} (roles {roles})")
         user.groups.add(*group_ids)
 
-    def remove_user_from_groups(self, user, roles=None):
+    def remove_roles_from_user(
+        self,
+        user: PermissionsMixin,
+        roles: Optional[list[str]],
+    ):
         group_ids = self.get_group_ids_for_roles(roles=roles)
+        if settings.DEBUG:
+            print(f"Removing user {user} from groups {group_ids} (roles {roles})")
         user.groups.remove(*group_ids)
 
     @classmethod

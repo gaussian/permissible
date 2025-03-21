@@ -65,7 +65,6 @@ class TestModelSerializer(serializers.ModelSerializer):
 
 # ViewSet for testing
 class TestModelViewSet(ModelViewSet):
-    base_model = TestPermIntegrationModel
     queryset = TestPermIntegrationModel.objects.all()
     serializer_class = TestModelSerializer
     permission_classes = [PermissiblePerms]

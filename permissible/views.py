@@ -27,17 +27,13 @@ class CheckViewConfigMixin:
             return view.detail
         return view.kwargs.get("pk", None) is not None
 
-    def _check_view_config(self, view):
+    def _check_view_config(self, view, queryset):
         from .filters import PermissibleFilter
         from .permissions import PermissiblePerms
 
-        assert hasattr(
-            view, "base_model"
-        ), f"View must have a `base_model` attribute pointing to the model class ({view})"
-
-        assert issubclass(
-            view.base_model, PermissibleMixin
-        ), f"Model class must be a subclass of `PermissibleMixin` ({view.base_model})"
+        assert queryset.model and issubclass(
+            queryset.model, PermissibleMixin
+        ), f"Model class must be a subclass of `PermissibleMixin` ({queryset.model})"
 
         # Check that view has permission_classes with PermissiblePerms, OR
         # if permission_classes is empty then check the default permission_classes
