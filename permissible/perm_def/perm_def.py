@@ -139,8 +139,15 @@ class PermDef:
         if self.key_to_obj_in_context:
             assert context, "Context must be provided to get object from"
             obj_pk = context.get(self.key_to_obj_in_context)
+            if not obj_pk:
+                print(f"Warning: No {self.key_to_obj_in_context} found in context")
+                return False
             obj_class = apps.get_model(self.model_label)
-            obj = obj_class.objects.get(pk=obj_pk)
+            try:
+                obj = obj_class.objects.get(pk=obj_pk)
+            except obj_class.DoesNotExist:
+                print(f"Warning: Object with PK {obj_pk} does not exist")
+                return False
 
         # ...or get by following the attribute path from the input object
         elif self.obj_path:
