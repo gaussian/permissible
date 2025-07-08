@@ -139,7 +139,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git fetch origin main:main
-          # Merge main into the current branch, preferring main’s changes if conflicts occur.
+          # Merge main into the current branch, preferring main's changes if conflicts occur.
           git merge origin/main --no-edit -X ours
           # If conflicts arise and are resolved, or if no conflicts occur, proceed to push
           git push origin HEAD:${{ github.head_ref }}

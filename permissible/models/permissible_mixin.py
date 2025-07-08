@@ -5,17 +5,11 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 
 from __future__ import annotations
 
-from collections import defaultdict
-from itertools import chain
-from typing import TYPE_CHECKING, Type, Optional
+from typing import Type, Optional
 
 from django.contrib.auth.models import PermissionsMixin
 
-from permissible.perm_def import (
-    BasePermDefObj,
-    PermDef,
-    CompositePermDef,
-)
+from permissible.perm_def import BasePermDefObj, BasePermDef
 
 from .policy_lookup import PolicyLooupMixin
 
@@ -82,12 +76,12 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
         return cls.get_policies().get("domains", None)
 
     @classmethod
-    def get_global_perms_def(cls, action: str) -> Optional[PermDef | CompositePermDef]:
+    def get_global_perms_def(cls, action: str) -> Optional[BasePermDef]:
         # Try to get the global action perm map from the policies.py file for this app
         return cls.get_policies().get("global", {}).get(action, None)
 
     @classmethod
-    def get_object_perm_def(cls, action: str) -> Optional[PermDef | CompositePermDef]:
+    def get_object_perm_def(cls, action: str) -> Optional[BasePermDef]:
         # Try to get the object action perm map from the policies.py file for this app
         return cls.get_policies().get("object", {}).get(action, None)
 
@@ -173,7 +167,7 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
         perm_def = self.get_object_perm_def(action)
         assert (
             perm_def is not None
-        ), f"No object permission defined for {self} action '{action}' in `policies.ACTION_POLICIES`"
+        ), f"No object permission for {self.__class__.__name__} (action '{action}') in `policies.ACTION_POLICIES`"
 
         # Check permissions on the object
         return perm_def.check_obj(
@@ -198,10 +192,35 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
         domains = [self.get_unretrieved(path) for path in domain_attr_paths]
 
         # If domains are missing, they are not included in the returned list
-        domains = [domain for domain in domains if domain]
+        domains = [d for d in domains if d]
 
         # Filter down to a specific type if requested
         if type:
-            domains = [domain for domain in domains if isinstance(domain, type)]
+            domains = [d for d in domains if isinstance(d, type)]
 
         return domains
+
+    @classmethod
+    def get_domain_classes(cls, type: Optional[Type] = None):
+        """
+        Return the domain class associated with this class, if any, by
+        looking at the policy configuration.
+
+        If no domain paths are found, return None. Otherwise, return the
+        list of domain classes (which may be empty).
+        """
+        domain_attr_paths = cls.get_domain_attr_paths()
+        if not domain_attr_paths:
+            return None
+
+        # Get the domain classes using the path provided
+        domain_classes = [cls.get_unretrieved_class(path) for path in domain_attr_paths]
+
+        # If domains are missing, they are not included in the returned list
+        domain_classes = [d for d in domain_classes if d]
+
+        # Filter down to a specific type if requested
+        if type:
+            domain_classes = [d for d in domain_classes if isinstance(d, type)]
+
+        return domain_classes

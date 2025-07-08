@@ -3,10 +3,14 @@
 Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
-from .perm_def import PermDef
+from typing import Iterable, Optional, Type
+
+from django.contrib.auth.models import PermissionsMixin
+
+from .base import BasePermDef, BasePermDefObj
 
 
-class CompositePermDef(PermDef):
+class CompositePermDef(BasePermDef):
     """
     A composite permission definition that combines multiple PermDef objects with logical operators.
 
@@ -55,7 +59,12 @@ class CompositePermDef(PermDef):
             raise ValueError("Operator must be 'and' or 'or'")
         self.operator = operator
 
-    def check_global(self, obj_class, user, context=None):
+    def check_global(
+        self,
+        obj_class: Type[BasePermDefObj],
+        user: PermissionsMixin,
+        context: Optional[dict] = None,
+    ):
         """
         Check if the user has global permissions according to the composite rule.
 
@@ -147,6 +156,19 @@ class CompositePermDef(PermDef):
                 result = result.intersection(qs)
 
         return result
+
+    def iter_perm_defs(self) -> Iterable[BasePermDef]:
+        """
+        Yield every *leaf* PermDef contained in this composite,
+        descending through any nested CompositePermDefs.
+
+        Example
+        -------
+        >>> for perm in combined.iter_perm_defs():
+        ...     print(perm)
+        """
+        for perm_def in self.perm_defs:
+            yield from perm_def.iter_perm_defs()
 
     def __or__(self, other):
         """
