@@ -12,7 +12,7 @@ from permissible.views import CheckViewConfigMixin
 
 class PermissibleFilter(CheckViewConfigMixin, filters.BaseFilterBackend):
     """
-     A filter backend that limits results to those where the requesting user
+    A filter backend that limits results to those where the requesting user
     has read object level permissions, according to policies.
 
     Filtering is based on the actions in the ACTION_POLICIES (either "object"
@@ -36,15 +36,18 @@ class PermissibleFilter(CheckViewConfigMixin, filters.BaseFilterBackend):
     Note that this filter is expected to work in conjunction with the permissions
     framework. Assertions guarantee that `PermissiblePerms` is being used.
 
-    THIS FILTER DOES NOT CHECK PERMISSIONS OR FILTER DOWN TO PERMITTED OBJECTS,
-    instead it relies on the ACTION_POLICIES being correctly configured to
-    check permissions.
+    THIS FILTER DOES NOT CHECK PERMISSIONS, instead it relies on the ACTION_POLICIES
+    being correctly configured to check permissions. It DOES filter down to permitted
+    objects based on the user's permissions.
+
+    THIS FILTER DOES NOT FILTER DOWN BASED ON REQUEST QUERY PARAMETERS, this is
+    done by a different filter backend (e.g. the default `DjangoFilterBackend`).
 
     NOTE: we do not perform filtering for detail routes.
     """
 
     def filter_queryset(self, request, queryset, view):
-        if self.is_detail_view(view):
+        if self.is_detail_view(view) or view.action in ("create", "delete"):
             return queryset
 
         # We require PermissiblePerms to be used on the view
