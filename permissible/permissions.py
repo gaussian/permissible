@@ -86,7 +86,7 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
 
         return True
 
-    def has_object_permission(self, request, view, obj):
+    def has_object_permission(self, request, view, obj: PermissibleMixin):
         """
         Object-specific permissions check. Runs for any actions where the
         primary key is present (e.g. "retrieve", "update", "destroy").

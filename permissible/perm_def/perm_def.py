@@ -3,15 +3,15 @@
 Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
-from typing import Any, List, Type, Union, Optional, Callable
+from typing import Any, Type, Optional, Callable
 
 from django.apps import apps
 from django.contrib.auth.models import PermissionsMixin
 
-from .base import BasePermDefObj
+from .base import BasePermDefObj, BasePermDef
 
 
-class PermDef:
+class PermDef(BasePermDef):
     """
     A simple data structure to hold instructions for permissions configuration.
 
@@ -31,7 +31,7 @@ class PermDef:
 
     def __init__(
         self,
-        short_perm_codes: Optional[List[str]],
+        short_perm_codes: Optional[list[str]],
         obj_path: Optional[str] = None,
         obj_filter: Optional[tuple[str, str, Any]] = None,
         global_condition_checker: Optional[Callable[[object, object], bool]] = None,
@@ -80,6 +80,19 @@ class PermDef:
                 assert (
                     not self.model_label
                 ), "Model label should not be provided if using obj_path but not using _context"
+
+    def __repr__(self):
+        """
+        String representation of the permission definition.
+        """
+        return (
+            f"PermDef(short_perm_codes={self.short_perm_codes}, "
+            f"obj_path={self.obj_path}, "
+            f"obj_filter={self.obj_filter}, "
+            f"global_condition_checker={self.global_condition_checker}, "
+            f"allow_blank={self.allow_blank}, "
+            f"model_label={self.model_label})"
+        )
 
     def check_global(
         self,
@@ -139,8 +152,15 @@ class PermDef:
         if self.key_to_obj_in_context:
             assert context, "Context must be provided to get object from"
             obj_pk = context.get(self.key_to_obj_in_context)
+            if not obj_pk:
+                print(f"Warning: No {self.key_to_obj_in_context} found in context")
+                return False
             obj_class = apps.get_model(self.model_label)
-            obj = obj_class.objects.get(pk=obj_pk)
+            try:
+                obj = obj_class.objects.get(pk=obj_pk)
+            except obj_class.DoesNotExist:
+                print(f"Warning: Object with PK {obj_pk} does not exist")
+                return False
 
         # ...or get by following the attribute path from the input object
         elif self.obj_path:
@@ -387,6 +407,10 @@ class PermDef:
 
         # Ryun checker function
         return self.global_condition_checker(user, context)
+
+    def iter_perm_defs(self):
+        """Yield myself so I acts like a 1-element collection."""
+        yield self
 
     def __or__(self, other):
         """

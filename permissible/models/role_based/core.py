@@ -290,16 +290,17 @@ class PermDomainRole(
         super().__init_subclass__(**kwargs)
 
         # Connect post_delete signal to our custom signal for every subclass
-        @receiver(post_delete, sender=cls)
+        @receiver(post_delete, sender=cls, weak=False)
         def post_delete_handler(sender, instance, **kwargs):
             """
             Upon deleting a PermDomainRole subclass, delete the connected Group
             (we do it this way to be able to attach to all subclasses).
             """
             instance.group.delete()
-            print(
-                f"Deleted Group {instance.group} for {instance.__class__}: {instance}"
-            )
+            if settings.DEBUG:
+                print(
+                    f"Deleted Group {instance.group} for {instance.__class__}: {instance}"
+                )
 
     def __str__(self):
         domain_field = self.get_domain_field()
