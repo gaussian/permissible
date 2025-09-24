@@ -18,7 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 guardian = [
-  "django-guardian==3.0.3",
+  "django-guardian==3.1.2",     # cannot be upgraded due to bug in get_objects_for_user
   "djangorestframework-guardian"
 ]
 
