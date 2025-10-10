@@ -86,6 +86,11 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
         return cls.get_policies().get("object", {}).get(action, None)
 
     @classmethod
+    def get_data_path(cls, action: str) -> Optional[str]:
+        # Try to get the data path from the policies.py file for this app
+        return cls.get_policies().get("data_paths", {}).get(action, None)
+
+    @classmethod
     def has_global_permission(cls, user: PermissionsMixin, action: str, context=None):
         """
         Check if the provided user can access this action for this model, by checking

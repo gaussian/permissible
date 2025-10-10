@@ -251,3 +251,22 @@ class LazyModelResolverMixin(object):
         obj = cls()
         [setattr(obj, k, v) for k, v in param_dict.items()]
         return obj
+
+    @staticmethod
+    def get_nested_key(data: dict, attr_path: str) -> Any:
+        """
+        Retrieve a nested attribute from a dictionary using a dot-separated attribute path.
+
+        Args:
+            data: The dictionary from which to retrieve the attribute.
+            attr_path: A dot-separated string representing the path to the desired attribute.
+
+        Returns:
+            The value of the nested attribute, or None if not found.
+        """
+        keys = attr_path.split(".")
+        for key in keys:
+            data = data.get(key)
+            if data is None:
+                return None
+        return data
