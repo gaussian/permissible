@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "permissible"
-version = "0.7.6"
+version = "0.7.7"
 description = "Extended, flexible and powerful object-level and rule-driven permissions for Django & Django REST framework"
 readme = "README.md"
 requires-python = ">=3.12"
