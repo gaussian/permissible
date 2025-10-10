@@ -122,6 +122,48 @@ You can adjust `ACTION_POLICIES` to incorporate checking of the domain model for
 permissions. See the documentation for `PermDef` and
 `PermissibleMixin.has_object_permissions` for info and examples.
 
+Data paths (request data lookup)
+
+If your object-level checks need to validate permissions based on values
+coming from the request body (for example when creating objects), you can
+specify a `data_paths` mapping in `ACTION_POLICIES`. This lets the
+permission system extract nested keys from `request.data` and build dummy
+objects for object-level permission checks. `PermissiblePerms` will use the
+`data_paths` entry for the current action when a non-detail action (e.g.
+`create`) includes request data.
+
+Example:
+
+```
+ACTION_POLICIES = {
+  "surveys.Survey": {
+    "data_paths": {
+      # For the create action, use request.data['survey'] as the object data
+      "create": "survey",
+      # Or to read a nested value: request.data['payload']['survey']
+      "batch_create": "payload.survey",
+    },
+    "object": {
+      "create": p(["add_on"], "project.team"),
+      "retrieve": p(["view_on"], "project.team"),
+      ...
+    },
+  },
+}
+```
+
+Behavior:
+- When `PermissiblePerms.has_permission` sees a non-detail action with
+  `request.data`, it will look up `data_paths[action]`. If present it will
+  pull that nested portion of the payload and pass it to
+  `Model.make_objs_from_data(...)` to build dummy model instances. Those
+  instances are then checked using the object-level `PermDef` rules (same as
+  for detail actions).
+
+If no `data_paths` entry exists for the action, the entire `request.data` is
+used as input to `make_objs_from_data`, which is the previous/default
+behavior.
+
 Remember: `PermDomain` is the core model on which roles are defined (eg Project or
 Team) and `PermDomainRole` is the model that represents a single role (and
 therefore a single Django `auth.Group`) for a single `PermDomain` - eg Team Admins.

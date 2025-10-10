@@ -33,6 +33,12 @@ class PermissibleFilter(CheckViewConfigMixin, filters.BaseFilterBackend):
     Note that if the "list" action policy is not defined, the "retrieve" policy
     will be used for list actions.
 
+    If your action requires building objects from `request.data` (eg for
+    `create`), you can use the optional `data_paths` mapping in
+    `ACTION_POLICIES` to specify a dot-separated path into the request payload
+    to extract the relevant data for permission checks. If not provided, the
+    entire `request.data` payload is used.
+
     Note that this filter is expected to work in conjunction with the permissions
     framework. Assertions guarantee that `PermissiblePerms` is being used.
 
