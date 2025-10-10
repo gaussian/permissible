@@ -88,7 +88,11 @@ class DummyObj(DummyShortPermsMixin):
         """
         Mock implementation of resolve_chain for testing filter_queryset
         """
-        return {"final_model_class": cls, "root_query_path": path.replace(".", "__")}
+        return {
+            "final_model_class": cls,
+            "root_query_path": path.replace(".", "__"),
+            "full_query_path": path.replace(".", "__"),
+        }
 
 
 # Dummy object to be used as a related object

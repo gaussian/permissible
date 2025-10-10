@@ -42,8 +42,8 @@ class TestFilterIntegrationModel(PermissibleMixin, models.Model):
             },
             "object": {
                 # List filtering will use "retrieve"" for PermissibleFilter
-                "retrieve": p(["view"]) | (IS_PUBLIC & perm_def_is_active),
-                "custom_list": p(["view"]) | (IS_PUBLIC & perm_def_is_active),
+                "retrieve": (IS_PUBLIC & perm_def_is_active) | p(["view"]),
+                "custom_list": (IS_PUBLIC & perm_def_is_active) | p(["view"]),
             },
         }
 
