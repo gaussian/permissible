@@ -79,9 +79,14 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
             # We must create a dummy object from request data and pass it into
             # `has_object_permission`, as this function will normally not be called
             # NOTE: multiple objects are allowed, hence the list of objects checked
+            # NOTE: sometimes the path to the data is provided
+            data = request.data
+            data_path = model_class.get_data_path(view.action)
+            if data_path:
+                data = model_class.get_nested_key(data, data_path)
             return all(
                 self.has_object_permission(request=request, view=view, obj=o)
-                for o in model_class.make_objs_from_data(request.data)
+                for o in model_class.make_objs_from_data(data)
             )
 
         return True

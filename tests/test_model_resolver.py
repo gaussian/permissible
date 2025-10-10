@@ -78,16 +78,18 @@ class LazyModelResolverMixinTest(TestCase):
             Question.get_unretrieved_class("chainer_session.experiment.team"), Team
         )
 
-    def test_get_unretrieved_single_level(self):
-        """Test get_unretrieved with a single-level chain."""
-        # This should return an unretrieved ChainerSession with id=100
-        # No DB query should be made
+    @mock.patch("django.db.models.query.QuerySet.values_list")
+    def test_get_unretrieved_single_level(self, mock_values_list):
+        """Test get_unretrieved with a single-level chain, mocking any DB access."""
+        # When FK is present, no DB query should be made
         unretrieved = self.question.get_unretrieved("chainer_session")
-
         self.assertIsInstance(unretrieved, ChainerSession)
         self.assertEqual(unretrieved.id, 100)
+        mock_values_list.assert_not_called()
 
-        # For a null foreign key, should return None
+        # When FK is null, the implementation may try to fetch from DB; mock it to avoid real DB
+        mock_values_list.reset_mock()
+        mock_values_list.return_value = []  # simulate no row found / cannot fetch
         self.assertIsNone(self.question_no_session.get_unretrieved("chainer_session"))
 
     @mock.patch("django.db.models.query.QuerySet.values_list")

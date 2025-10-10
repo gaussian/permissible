@@ -33,6 +33,7 @@ class PermDef(BasePermDef):
         self,
         short_perm_codes: Optional[list[str]],
         obj_path: Optional[str] = None,
+        *,
         obj_filter: Optional[tuple[str, str, Any]] = None,
         global_condition_checker: Optional[Callable[[object, object], bool]] = None,
         allow_blank: bool = False,

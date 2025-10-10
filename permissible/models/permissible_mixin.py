@@ -37,6 +37,14 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
     a list of `PermDef` objects which define what it takes to pass the permissions
     check. See `PermDef`.
 
+    Additionally, you may provide a `data_paths` mapping in `ACTION_POLICIES` to
+    instruct the permission system how to extract the relevant object data from
+    `request.data` for non-detail actions (for example, `create`). The keys of
+    `data_paths` are action names and the values are dot-separated paths into the
+    request payload (e.g. "payload.survey"). When present, `PermissiblePerms`
+    will use those paths to build dummy objects via `make_objs_from_data(...)`
+    and run the object-level permission checks against those dummy instances.
+
     Note that permission definitions must be explicitly defined for each action
     in the model's ACTION_POLICIES. If no definition is found, an assertion will
     fail.
@@ -84,6 +92,18 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
     def get_object_perm_def(cls, action: str) -> Optional[BasePermDef]:
         # Try to get the object action perm map from the policies.py file for this app
         return cls.get_policies().get("object", {}).get(action, None)
+
+    @classmethod
+    def get_data_path(cls, action: str) -> Optional[str]:
+        # Try to get the data path from the policies.py file for this app.
+        #
+        # `data_paths` is an optional mapping in ACTION_POLICIES that maps an
+        # action name (eg 'create') to a dot-separated path into the
+        # `request.data` payload. If present, the framework will extract that
+        # nested portion of the request body and pass it to
+        # `make_objs_from_data(...)` to construct dummy objects for permission
+        # checks.
+        return cls.get_policies().get("data_paths", {}).get(action, None)
 
     @classmethod
     def has_global_permission(cls, user: PermissionsMixin, action: str, context=None):

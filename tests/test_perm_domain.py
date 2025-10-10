@@ -469,13 +469,16 @@ class PermDomainTests(TestCase):
         from permissible.perm_def import PermDef
 
         # Create a dummy instance with specific user_id
+        # Ensure the dummy has a valid dummydomain to avoid RelatedObjectDoesNotExist
+        domain = self.create_domain_with_mocks("Test Domain PermDef Self")
         dummy = DummyDomainMember()
-        dummy.user_id = 123
+        # Assign a real user instance so accessing `dummy.user` won't trigger DoesNotExist
+        dummy.user = self.normal_user
+        dummy.dummydomain = domain
         dummy.pk = 1
 
-        # Test user with matching ID
-        test_user = MagicMock()
-        test_user.id = 123
+        # Use the real user as the test user so IDs match
+        test_user = self.normal_user
 
         # Create an empty context
         context = {"user": test_user, "request": {"user": test_user}}

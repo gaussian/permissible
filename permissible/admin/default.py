@@ -50,7 +50,13 @@ class PermissibleAdminMixin(object):
                 return False
             # For "create" action, we must create a dummy object from request data
             # and use it to check permissions against
-            obj = self.model.make_objs_from_data(request.data)[0]
+            # If ACTION_POLICIES provides a `data_paths` entry for this action,
+            # use that (it points to a dot-separated path into request.data).
+            data_path = self.model.get_data_path("create")
+            data = request.data
+            if data_path:
+                data = self.model.get_nested_key(data, data_path)
+            obj = self.model.make_objs_from_data(data)[0]
         return obj.has_object_permission(**perm_check_kwargs)
 
     def has_add_permission(self, request, obj=None):

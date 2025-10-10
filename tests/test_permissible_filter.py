@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from django.db.models import QuerySet
 from django.http import HttpRequest
 from rest_framework.request import Request
+from rest_framework.test import APIRequestFactory
 
 from permissible.filters import PermissibleFilter
 from permissible.models.permissible_mixin import PermissibleMixin
@@ -105,14 +106,11 @@ class DummyView:
 
 class TestPermissibleFilter(TestCase):
     def setUp(self):
-        # Create a mock request
-        self.http_request = MagicMock(spec=HttpRequest)
-        self.request = Request(self.http_request)
-        self.request._request = self.http_request
-
         # Create a standard user
         self.user = DummyUser()
-        self.request.user = self.user
+
+        # Build a real DRF Request (GET is fine for list tests)
+        self.request = self._make_request("get", "/", user=self.user)
 
         # Create a superuser
         self.superuser = DummyUser(is_superuser=True)
@@ -121,6 +119,14 @@ class TestPermissibleFilter(TestCase):
         self.queryset = MagicMock(spec=QuerySet)
         self.queryset.model = DummyModel
         self.view = DummyView(queryset=self.queryset)
+
+    def _make_request(self, method="get", path="/", user=None, **kwargs):
+        factory = getattr(self, "_factory", None) or APIRequestFactory()
+        self._factory = factory  # cache for reuse
+        django_req = getattr(factory, method)(path, **kwargs)
+        drf_req = Request(django_req)
+        drf_req.user = user or DummyUser()
+        return drf_req
 
     @patch("guardian.shortcuts.get_objects_for_user")
     def test_filter_queryset_basic(self, mock_get_objects):
@@ -161,9 +167,7 @@ class TestPermissibleFilter(TestCase):
         filter_instance = PermissibleFilter()
 
         # Configure request with superuser
-        request = Request(self.http_request)
-        request._request = self.http_request
-        request.user = self.superuser
+        request = self._make_request("get", "/", user=self.superuser)
 
         # Call filter_queryset
         result = filter_instance.filter_queryset(request, self.queryset, view)

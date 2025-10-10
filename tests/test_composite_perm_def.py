@@ -66,7 +66,11 @@ class DummyObj(DummyShortPermsMixin):
 
     @classmethod
     def resolve_chain(cls, path):
-        return {"final_model_class": cls, "root_query_path": path.replace(".", "__")}
+        return {
+            "final_model_class": cls,
+            "root_query_path": path.replace(".", "__"),
+            "full_query_path": path.replace(".", "__"),
+        }
 
 
 class TestCompositePermDef(unittest.TestCase):
