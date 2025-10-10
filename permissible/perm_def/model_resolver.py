@@ -15,6 +15,9 @@ class LazyModelResolverMixin(object):
         Return an *unretrieved* model instance for a dot-separated chain of foreign keys,
         using exactly one DB query if multi-level, and zero queries if single-level.
 
+        If the root_pk of the chain is missing, then retrieve value for this from the
+        database.
+
         Examples:
         get_unretrieved("team")
             -> returns Team(pk=self.team_id), no DB query
@@ -44,9 +47,28 @@ class LazyModelResolverMixin(object):
 
         # The root_pk (eg self.team_id for an illustrative single-length chain,
         # or self.opportunity_id for an illustrative multi-length chain) is null,
-        # so we can't proceed. This is not an error - the result is simply "None".
+        # so we need to try to fetch it from the database. If it is still null,
+        # return None - this is not an error, we just can't proceed.
         if not root_pk:
-            return None
+            # Get our own PK - if we don't have one (i.e. not created yet), we
+            # can't fetch anything
+            if getattr(self, self._meta.pk.attname) is None:
+                return None
+            # If we don't have the needed FK on `self`, fetch JUST that column
+            # from the DB using this object's pk. This avoids loading the whole row.
+            fetched = list(
+                self.__class__.objects.filter(pk=self.pk).values_list(
+                    root_field.attname, flat=True
+                )
+            )
+            print(
+                f"Fetched for {root_field.attname}: {fetched} - self.pk={self.pk}, class={self.__class__}, id = {getattr(self, self._meta.pk.attname)}"
+            )
+            if len(fetched) != 1 or not fetched[0]:
+                # Failed to fetch
+                return None
+            # Found it
+            root_pk = fetched[0]
 
         # If a query path is set, use it to find the final primary key, i.e.
         # the primary key of the final model in the chain.
