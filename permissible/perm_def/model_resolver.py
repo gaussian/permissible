@@ -61,9 +61,9 @@ class LazyModelResolverMixin(object):
                     root_field.attname, flat=True
                 )
             )
-            print(
-                f"Fetched for {root_field.attname}: {fetched} - self.pk={self.pk}, class={self.__class__}, id = {getattr(self, self._meta.pk.attname)}"
-            )
+            # print(
+            #     f"Fetched for {root_field.attname}: {fetched} - self.pk={self.pk}, class={self.__class__}, id = {getattr(self, self._meta.pk.attname)}"
+            # )
             if len(fetched) != 1 or not fetched[0]:
                 # Failed to fetch
                 return None
