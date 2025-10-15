@@ -81,9 +81,33 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
             # NOTE: multiple objects are allowed, hence the list of objects checked
             # NOTE: sometimes the path to the data is provided
             data = request.data
-            data_path = model_class.get_data_path(view.action)
-            if data_path:
-                data = model_class.get_nested_key(data, data_path)
+
+            # Transform the request data based on the data_paths config
+            data_path_config = model_class.get_data_path(view.action)
+            if data_path_config:
+                if isinstance(data_path_config, dict):
+                    data_path = data_path_config.get("path")
+                    transform_flat_list_with_key = data_path_config.get(
+                        "transform_flat_list_with_key"
+                    )
+                    if not isinstance(transform_flat_list_with_key, str):
+                        transform_flat_list_with_key = None
+                elif isinstance(data_path_config, str):
+                    data_path = data_path_config
+                    transform_flat_list_with_key = None
+                else:
+                    data_path = None
+                if data_path:
+                    data = model_class.get_nested_key(data, data_path)
+                    if (
+                        transform_flat_list_with_key
+                        and isinstance(data, list)
+                        and all(isinstance(item, str) for item in data)
+                    ):
+                        # Special case - make into primary keys
+                        data = [{transform_flat_list_with_key: item} for item in data]
+
+            # Check permissions on an (unsaved) object created from each item in the data
             return all(
                 self.has_object_permission(request=request, view=view, obj=o)
                 for o in model_class.make_objs_from_data(data)

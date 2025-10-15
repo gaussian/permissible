@@ -94,7 +94,7 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
         return cls.get_policies().get("object", {}).get(action, None)
 
     @classmethod
-    def get_data_path(cls, action: str) -> Optional[str]:
+    def get_data_path(cls, action: str) -> Optional[str | dict]:
         # Try to get the data path from the policies.py file for this app.
         #
         # `data_paths` is an optional mapping in ACTION_POLICIES that maps an
