@@ -1,9 +1,12 @@
+import logging
 from typing import Type
 
 from django.contrib.auth.models import Group
 
 from permissible.models.permissible_mixin import PermissibleMixin
 from permissible.perm_def import BasePermDefObj
+
+logger = logging.getLogger(__name__)
 
 
 def assign_short_perms(short_perms, user_or_group, obj: BasePermDefObj):
@@ -44,13 +47,15 @@ def update_permissions_for_object(
     permissions_to_add = expected_perms - current_perms
     permissions_to_remove = current_perms - expected_perms
 
-    # print(f"Current permissions for {obj} for {group}: {current_perms}")
-    # print(f"Expected permissions for {obj} for {group}: {expected_perms}")
-
-    # if permissions_to_add:
-    #     print(f"Adding permissions to {obj} for {group}: {permissions_to_add}")
-    # if permissions_to_remove:
-    #     print(f"Removing permissions from {obj} for {group}: {permissions_to_remove}")
+    if permissions_to_add or permissions_to_remove:
+        logger.debug(
+            "Updating permissions for %s (id=%s), group=%s: adding=%s, removing=%s",
+            obj.__class__.__name__,
+            obj.pk,
+            group.name,
+            permissions_to_add or "none",
+            permissions_to_remove or "none",
+        )
 
     # Perform the necessary permission assignments
     for perm in permissions_to_add:

@@ -5,6 +5,7 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 
 from __future__ import annotations
 
+import logging
 from abc import abstractmethod
 from typing import Iterable, Optional, Type
 
@@ -18,6 +19,8 @@ from .base import AbstractModelMetaclass, BasePermDomain
 from ..permissible_mixin import PermissibleMixin
 from ..utils import clear_permissions_for_class, update_permissions_for_object
 from permissible.utils.signals import get_subclasses
+
+logger = logging.getLogger(__name__)
 
 
 class PermDomain(BasePermDomain):
@@ -126,8 +129,12 @@ class PermDomain(BasePermDomain):
         roles: Optional[list[str]],
     ):
         group_ids = self.get_group_ids_for_roles(roles=roles)
-        if settings.DEBUG:
-            print(f"Adding user {user} to groups {group_ids} (roles {roles})")
+        logger.debug(
+            "Assigning roles to user %s: groups=%s, roles=%s",
+            user,
+            list(group_ids),
+            roles,
+        )
         user.groups.add(*group_ids)
 
     def remove_roles_from_user(
@@ -136,8 +143,12 @@ class PermDomain(BasePermDomain):
         roles: Optional[list[str]],
     ):
         group_ids = self.get_group_ids_for_roles(roles=roles)
-        if settings.DEBUG:
-            print(f"Removing user {user} from groups {group_ids} (roles {roles})")
+        logger.debug(
+            "Removing roles from user %s: groups=%s, roles=%s",
+            user,
+            list(group_ids),
+            roles,
+        )
         user.groups.remove(*group_ids)
 
     @classmethod
@@ -296,11 +307,13 @@ class PermDomainRole(
             Upon deleting a PermDomainRole subclass, delete the connected Group
             (we do it this way to be able to attach to all subclasses).
             """
+            logger.debug(
+                "Deleted Group %s for %s: %s",
+                instance.group,
+                instance.__class__,
+                instance,
+            )
             instance.group.delete()
-            if settings.DEBUG:
-                print(
-                    f"Deleted Group {instance.group} for {instance.__class__}: {instance}"
-                )
 
     def __str__(self):
         domain_field = self.get_domain_field()
