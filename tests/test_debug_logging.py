@@ -39,7 +39,6 @@ class TestLoggingViewSet(ModelViewSet):
     queryset = TestLoggingModel.objects.all()
     permission_classes = [PermissiblePerms]
     filter_backends = [PermissibleFilter]
-    filterset_class = PermissibleFilter
 
 
 class DebugLoggingTest(TestCase):
