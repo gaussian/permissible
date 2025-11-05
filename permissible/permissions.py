@@ -5,6 +5,7 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Type
 
 from django.http import Http404
@@ -15,6 +16,8 @@ from permissible.views import CheckViewConfigMixin
 
 if TYPE_CHECKING:
     from permissible.models import PermissibleMixin
+
+logger = logging.getLogger(__name__)
 
 
 class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions):
@@ -66,6 +69,12 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
 
         # Check if user has permission to do this action on this model type
         if not model_class.has_global_permission(**perm_check_kwargs):
+            logger.debug(
+                "Global permission denied for user=%s, model=%s, action=%s",
+                request.user,
+                model_class.__name__,
+                view.action,
+            )
             return False
 
         # Global permission check suceeeded - but now do additional checks for
@@ -140,6 +149,13 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
             user=user, action=view.action, context=context
         ):
             # PERMISSION CHECK FAILED
+            logger.debug(
+                "Object permission denied for user=%s, obj=%s (id=%s), action=%s",
+                user,
+                obj.__class__.__name__,
+                obj.pk if hasattr(obj, "pk") else "N/A",
+                view.action,
+            )
 
             # If user is not authenticated, then return False to raise a 403
             # (instead of 404 per the logic below)
