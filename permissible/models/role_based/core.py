@@ -308,7 +308,7 @@ class PermDomainRole(
             (we do it this way to be able to attach to all subclasses).
             """
             logger.debug(
-                "Deleted Group %s for %s: %s",
+                "Deleting Group %s for %s: %s",
                 instance.group,
                 instance.__class__,
                 instance,
