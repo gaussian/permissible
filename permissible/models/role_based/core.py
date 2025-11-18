@@ -106,7 +106,8 @@ class PermDomain(BasePermDomain):
             # Force reassigning of permissions if not a new PermDomainRole
             if not created:
                 domain_role_obj: PermDomainRole
-                domain_role_obj.reset_permissions(clear_existing=True)
+                # domain_role_obj.reset_permissions(clear_existing=True)
+                domain_role_obj.reset_permissions(clear_existing=False)
 
     def get_group_ids_for_roles(self, roles=None):
         domain_role_model_class: Type[PermDomainRole] = (
