@@ -5,6 +5,7 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 
 from __future__ import annotations
 
+import logging
 from abc import abstractmethod
 from typing import Iterable, Optional, Type
 
@@ -14,10 +15,13 @@ from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
-from .base import AbstractModelMetaclass, BasePermDomain
-from ..permissible_mixin import PermissibleMixin
-from ..utils import clear_permissions_for_class, update_permissions_for_object
+from permissible.models.permissible_mixin import PermissibleMixin
+from permissible.models.utils import reset_permissions
 from permissible.utils.signals import get_subclasses
+
+from .base import AbstractModelMetaclass, BasePermDomain
+
+logger = logging.getLogger(__name__)
 
 
 class PermDomain(BasePermDomain):
@@ -94,6 +98,8 @@ class PermDomain(BasePermDomain):
         role_choices = domain_role_model_class._meta.get_field("role").choices
         domain_field = domain_role_model_class.get_domain_field()
         assert isinstance(role_choices, Iterable)
+
+        domain_role_objs_to_reset_perms = []
         for role, _ in role_choices:
             domain_role_obj, created = domain_role_model_class.objects.get_or_create(
                 role=role,
@@ -103,7 +109,10 @@ class PermDomain(BasePermDomain):
             # Force reassigning of permissions if not a new PermDomainRole
             if not created:
                 domain_role_obj: PermDomainRole
-                domain_role_obj.reset_permissions(clear_existing=True)
+                domain_role_objs_to_reset_perms.append(domain_role_obj)
+
+        # Perform reset
+        reset_permissions(domain_role_objs_to_reset_perms, clear_existing=False)
 
     def get_group_ids_for_roles(self, roles=None):
         domain_role_model_class: Type[PermDomainRole] = (
@@ -126,8 +135,12 @@ class PermDomain(BasePermDomain):
         roles: Optional[list[str]],
     ):
         group_ids = self.get_group_ids_for_roles(roles=roles)
-        if settings.DEBUG:
-            print(f"Adding user {user} to groups {group_ids} (roles {roles})")
+        logger.debug(
+            "Assigning roles to user %s: groups=%s, roles=%s",
+            user,
+            list(group_ids),
+            roles,
+        )
         user.groups.add(*group_ids)
 
     def remove_roles_from_user(
@@ -136,8 +149,12 @@ class PermDomain(BasePermDomain):
         roles: Optional[list[str]],
     ):
         group_ids = self.get_group_ids_for_roles(roles=roles)
-        if settings.DEBUG:
-            print(f"Removing user {user} from groups {group_ids} (roles {roles})")
+        logger.debug(
+            "Removing roles from user %s: groups=%s, roles=%s",
+            user,
+            list(group_ids),
+            roles,
+        )
         user.groups.remove(*group_ids)
 
     @classmethod
@@ -296,11 +313,13 @@ class PermDomainRole(
             Upon deleting a PermDomainRole subclass, delete the connected Group
             (we do it this way to be able to attach to all subclasses).
             """
+            logger.debug(
+                "Deleting Group %s for %s: %s",
+                instance.group,
+                instance.__class__,
+                instance,
+            )
             instance.group.delete()
-            if settings.DEBUG:
-                print(
-                    f"Deleted Group {instance.group} for {instance.__class__}: {instance}"
-                )
 
     def __str__(self):
         domain_field = self.get_domain_field()
@@ -308,46 +327,6 @@ class PermDomainRole(
         domain_obj_class = domain_field.related_model
         class_label = domain_obj_class._meta.app_label + "." + domain_obj_class.__name__
         return f"[{self.role}][{class_label}] {domain_obj} [{domain_obj.id}]"
-
-    def reset_permissions(self, clear_existing=False):
-        """
-        Assign the correct permissions over the associated `PermDomain` to this
-        object's Group, according to `self.ROLE_DEFINITIONS`.
-
-        Ideally, this is only called when the object (and its Group) are created,
-        but it can also be called via the admin interface in case of
-        troubleshooting.
-        """
-
-        # Find the domain object associated with thie object (PermDomain)
-        domain_field = self.get_domain_field()
-        domain_obj: PermDomain = getattr(self, domain_field.name)
-
-        # Clear existing permissions if requested
-        if clear_existing:
-            clear_permissions_for_class(
-                group=self.group, obj_class=domain_obj.__class__
-            )
-            # print("==== Cleared existing permissions ====")
-
-        # Determine the new set of permission codenames based on ROLE_DEFINITIONS
-        # e.g. {'app_label.add_model', 'app_label.change_model'}
-        _, short_perm_codes = self.ROLE_DEFINITIONS[self.role]
-
-        # We need to give/update permissions for the relevant permission target(s)
-        # for this domain object - by default (and almost always) this is simply
-        # the domain object itself; however, in certain cases (eg in the subclass
-        # of `PermDomain` called `HierarchicalPermDomain`) this may be different (eg
-        # it may be chidren objects)
-        for obj in domain_obj.get_permission_targets():
-            update_permissions_for_object(
-                # These permissions...
-                short_perm_codes=short_perm_codes,
-                # ...over the object...
-                obj=obj,
-                # ...are given to the group
-                group=self.group,
-            )
 
     def save(self, *args, **kwargs):
         """
@@ -363,7 +342,7 @@ class PermDomainRole(
             self.group_id = group.pk
 
         # Set or reset the Group's permissions
-        self.reset_permissions()
+        reset_permissions([self])
 
         return super().save(*args, **kwargs)
 

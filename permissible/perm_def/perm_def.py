@@ -3,12 +3,15 @@
 Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
+import logging
 from typing import Any, Type, Optional, Callable
 
 from django.apps import apps
 from django.contrib.auth.models import PermissionsMixin
 
 from .base import BasePermDefObj, BasePermDef
+
+logger = logging.getLogger(__name__)
 
 
 class PermDef(BasePermDef):
@@ -154,13 +157,20 @@ class PermDef(BasePermDef):
             assert context, "Context must be provided to get object from"
             obj_pk = context.get(self.key_to_obj_in_context)
             if not obj_pk:
-                print(f"Warning: No {self.key_to_obj_in_context} found in context")
+                logger.debug(
+                    "Permission check failed: no %s found in context",
+                    self.key_to_obj_in_context,
+                )
                 return False
             obj_class = apps.get_model(self.model_label)
             try:
                 obj = obj_class.objects.get(pk=obj_pk)
             except obj_class.DoesNotExist:
-                print(f"Warning: Object with PK {obj_pk} does not exist")
+                logger.debug(
+                    "Permission check failed: %s object with PK %s does not exist",
+                    obj_class.__name__,
+                    obj_pk,
+                )
                 return False
 
         # ...or get by following the attribute path from the input object

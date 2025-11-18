@@ -109,7 +109,7 @@ class PermDomainTests(TestCase):
     def create_domain_with_mocks(self, name="Test Domain"):
         """Helper method to create a domain with all necessary mocks"""
         with (
-            patch("permissible.models.role_based.core.update_permissions_for_object"),
+            patch("permissible.models.role_based.core.reset_permissions"),
             patch("guardian.shortcuts.assign_perm"),
             patch("guardian.shortcuts.remove_perm"),
             patch("guardian.shortcuts.get_group_perms", return_value=set()),
@@ -126,8 +126,8 @@ class PermDomainTests(TestCase):
 
             return domain
 
-    @patch("permissible.models.role_based.core.update_permissions_for_object")
-    def test_reset_domain_roles_creates_groups(self, mock_update_permissions):
+    @patch("permissible.models.role_based.core.reset_permissions")
+    def test_reset_domain_roles_creates_groups(self, mock_reset_permissions):
         """
         Creating a new DummyDomain should trigger save() which calls reset_domain_roles.
         Verify that one DummyDomainRole (and its Group) is created for each role.
@@ -140,8 +140,8 @@ class PermDomainTests(TestCase):
         for join_obj in groups_qs:
             self.assertIsNotNone(join_obj.group_id)
 
-        # Check that update_permissions_for_object was called
-        mock_update_permissions.assert_called()
+        # Check that reset_permissions was called
+        mock_reset_permissions.assert_called()
 
     def test_get_group_ids_for_roles_all(self):
         """
@@ -156,7 +156,7 @@ class PermDomainTests(TestCase):
         unique_domain_name = "Test Domain ROLES ALL"
 
         # Create a fresh domain with mocked permissions
-        with patch("permissible.models.role_based.core.update_permissions_for_object"):
+        with patch("permissible.models.role_based.core.reset_permissions"):
             domain = DummyDomain.objects.create(name=unique_domain_name)
 
             # Instead of using get_role_joins(), directly use DummyDomainRole
@@ -197,7 +197,7 @@ class PermDomainTests(TestCase):
         unique_domain_name = "Test Domain SPECIFIC ROLE"
 
         # Create a fresh domain with mocked permissions
-        with patch("permissible.models.role_based.core.update_permissions_for_object"):
+        with patch("permissible.models.role_based.core.reset_permissions"):
             domain = DummyDomain.objects.create(name=unique_domain_name)
 
             # Instead of using get_role_joins(), directly use DummyDomainRole
@@ -261,7 +261,7 @@ class PermDomainTests(TestCase):
 
         # Create a domain with a very unique name to ensure it's distinct
         domain_name = "Test Domain User Joins UNIQUE"
-        with patch("permissible.models.role_based.core.update_permissions_for_object"):
+        with patch("permissible.models.role_based.core.reset_permissions"):
             domain = DummyDomain.objects.create(name=domain_name)
 
             # Remove any automatically created roles (clean slate)
@@ -326,8 +326,11 @@ class PermDomainTests(TestCase):
 
     def test_reset_permissions(self):
         """
-        Test that reset_permissions uses guardian's assign_perm to set permissions.
+        Test that reset_permissions sets permissions correctly.
         """
+        from permissible.models.utils.reset import reset_permissions
+        from guardian.shortcuts import get_group_perms
+
         # First completely clean the database
         DummyDomainRole.objects.all().delete()
         Group.objects.all().delete()
@@ -337,7 +340,7 @@ class PermDomainTests(TestCase):
         domain_name = "Test Domain Reset Permissions COMPLETELY UNIQUE"
 
         # Create the domain and a single view role
-        with patch("permissible.models.role_based.core.update_permissions_for_object"):
+        with patch("permissible.models.role_based.core.reset_permissions"):
             domain = DummyDomain.objects.create(name=domain_name)
             # Remove any automatically created roles
             DummyDomainRole.objects.filter(dummydomain=domain).delete()
@@ -356,28 +359,19 @@ class PermDomainTests(TestCase):
                 count, 1, f"Expected 1 view role for domain, found {count}"
             )
 
-        # Now test reset_permissions with mocks
-        with (
-            patch(
-                "guardian.shortcuts.get_group_perms", return_value=set()
-            ) as mock_get_perms,
-            patch("guardian.shortcuts.assign_perm") as mock_assign_perm,
-            patch("guardian.shortcuts.remove_perm") as mock_remove_perm,
-            patch("permissible.signals.perm_domain_role_permissions_updated"),
-        ):
-
+        # Now test reset_permissions - it should actually set the permissions
+        with patch("permissible.signals.perm_domain_role_permissions_updated"):
             # Call reset_permissions on our single view role
-            join_obj.reset_permissions()
+            reset_permissions([join_obj])
 
-            # Verify expected permissions
-            expected_perms = DummyDomain.get_permission_codenames(
-                ["view"], include_app_label=False
-            )
+        # Verify expected permissions
+        expected_perms = DummyDomain.get_permission_codenames(
+            ["view"], include_app_label=False
+        )
 
-            # Verify the correct permission assignments were made
-            for perm in expected_perms:
-                mock_assign_perm.assert_any_call(perm, join_obj.group, domain)
-            mock_remove_perm.assert_not_called()
+        # Verify the permissions were actually set in the database
+        actual_perms = set(get_group_perms(join_obj.group, domain))
+        self.assertEqual(expected_perms, actual_perms)
 
     def test_get_domain_obj(self):
         """

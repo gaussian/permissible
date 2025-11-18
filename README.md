@@ -117,6 +117,7 @@ ACTION_POLICIES = {
         },
     }
 }
+```
 
 You can adjust `ACTION_POLICIES` to incorporate checking of the domain model for
 permissions. See the documentation for `PermDef` and
