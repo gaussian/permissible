@@ -140,7 +140,7 @@ class PermDomainTests(TestCase):
         for join_obj in groups_qs:
             self.assertIsNotNone(join_obj.group_id)
 
-        # Check that update_permissions_for_object was called
+        # Check that reset_permissions was called
         mock_reset_permissions.assert_called()
 
     def test_get_group_ids_for_roles_all(self):
@@ -326,9 +326,10 @@ class PermDomainTests(TestCase):
 
     def test_reset_permissions(self):
         """
-        Test that reset_permissions uses guardian's assign_perm to set permissions.
+        Test that reset_permissions sets permissions correctly.
         """
         from permissible.models.utils.reset import reset_permissions
+        from guardian.shortcuts import get_group_perms
 
         # First completely clean the database
         DummyDomainRole.objects.all().delete()
@@ -358,28 +359,19 @@ class PermDomainTests(TestCase):
                 count, 1, f"Expected 1 view role for domain, found {count}"
             )
 
-        # Now test reset_permissions with mocks
-        with (
-            patch(
-                "guardian.shortcuts.get_group_perms", return_value=set()
-            ) as mock_get_perms,
-            patch("guardian.shortcuts.assign_perm") as mock_assign_perm,
-            patch("guardian.shortcuts.remove_perm") as mock_remove_perm,
-            patch("permissible.signals.perm_domain_role_permissions_updated"),
-        ):
-
+        # Now test reset_permissions - it should actually set the permissions
+        with patch("permissible.signals.perm_domain_role_permissions_updated"):
             # Call reset_permissions on our single view role
             reset_permissions([join_obj])
 
-            # Verify expected permissions
-            expected_perms = DummyDomain.get_permission_codenames(
-                ["view"], include_app_label=False
-            )
+        # Verify expected permissions
+        expected_perms = DummyDomain.get_permission_codenames(
+            ["view"], include_app_label=False
+        )
 
-            # Verify the correct permission assignments were made
-            for perm in expected_perms:
-                mock_assign_perm.assert_any_call(perm, join_obj.group, domain)
-            mock_remove_perm.assert_not_called()
+        # Verify the permissions were actually set in the database
+        actual_perms = set(get_group_perms(join_obj.group, domain))
+        self.assertEqual(expected_perms, actual_perms)
 
     def test_get_domain_obj(self):
         """

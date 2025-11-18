@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .clear import clear_permissions_for_class
-from .update import update_permissions_for_object
+from .update import bulk_update_permissions_for_objects, ObjectGroupPermSpec
 
 if TYPE_CHECKING:
     from permissible.models.role_based.core import PermDomain, PermDomainRole
@@ -18,6 +18,9 @@ def reset_permissions(perm_domain_roles: list[PermDomainRole], clear_existing=Fa
     but it can also be called via the admin interface in case of
     troubleshooting.
     """
+
+    # Collect all specs for bulk update
+    specs = []
 
     for perm_domain_role in perm_domain_roles:
 
@@ -42,11 +45,12 @@ def reset_permissions(perm_domain_roles: list[PermDomainRole], clear_existing=Fa
         # of `PermDomain` called `HierarchicalPermDomain`) this may be different (eg
         # it may be chidren objects)
         for obj in domain_obj.get_permission_targets():
-            update_permissions_for_object(
-                # These permissions...
-                short_perm_codes=short_perm_codes,
-                # ...over the object...
+            specs.append(ObjectGroupPermSpec(
                 obj=obj,
-                # ...are given to the group
                 group=perm_domain_role.group,
-            )
+                short_perm_codes=short_perm_codes,
+            ))
+
+    # Bulk update all permissions
+    if specs:
+        bulk_update_permissions_for_objects(specs)
