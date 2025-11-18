@@ -140,7 +140,7 @@ class PermDomainTests(TestCase):
         for join_obj in groups_qs:
             self.assertIsNotNone(join_obj.group_id)
 
-        # Check that update_permissions_for_object was called
+        # Check that reset_permissions was called
         mock_reset_permissions.assert_called()
 
     def test_get_group_ids_for_roles_all(self):
