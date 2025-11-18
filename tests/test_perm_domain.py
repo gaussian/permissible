@@ -109,7 +109,7 @@ class PermDomainTests(TestCase):
     def create_domain_with_mocks(self, name="Test Domain"):
         """Helper method to create a domain with all necessary mocks"""
         with (
-            patch("permissible.models.role_based.core.update_permissions_for_object"),
+            patch("permissible.models.role_based.core.reset_permissions"),
             patch("guardian.shortcuts.assign_perm"),
             patch("guardian.shortcuts.remove_perm"),
             patch("guardian.shortcuts.get_group_perms", return_value=set()),
@@ -126,8 +126,8 @@ class PermDomainTests(TestCase):
 
             return domain
 
-    @patch("permissible.models.role_based.core.update_permissions_for_object")
-    def test_reset_domain_roles_creates_groups(self, mock_update_permissions):
+    @patch("permissible.models.role_based.core.reset_permissions")
+    def test_reset_domain_roles_creates_groups(self, mock_reset_permissions):
         """
         Creating a new DummyDomain should trigger save() which calls reset_domain_roles.
         Verify that one DummyDomainRole (and its Group) is created for each role.
@@ -141,7 +141,7 @@ class PermDomainTests(TestCase):
             self.assertIsNotNone(join_obj.group_id)
 
         # Check that update_permissions_for_object was called
-        mock_update_permissions.assert_called()
+        mock_reset_permissions.assert_called()
 
     def test_get_group_ids_for_roles_all(self):
         """
@@ -156,7 +156,7 @@ class PermDomainTests(TestCase):
         unique_domain_name = "Test Domain ROLES ALL"
 
         # Create a fresh domain with mocked permissions
-        with patch("permissible.models.role_based.core.update_permissions_for_object"):
+        with patch("permissible.models.role_based.core.reset_permissions"):
             domain = DummyDomain.objects.create(name=unique_domain_name)
 
             # Instead of using get_role_joins(), directly use DummyDomainRole
@@ -197,7 +197,7 @@ class PermDomainTests(TestCase):
         unique_domain_name = "Test Domain SPECIFIC ROLE"
 
         # Create a fresh domain with mocked permissions
-        with patch("permissible.models.role_based.core.update_permissions_for_object"):
+        with patch("permissible.models.role_based.core.reset_permissions"):
             domain = DummyDomain.objects.create(name=unique_domain_name)
 
             # Instead of using get_role_joins(), directly use DummyDomainRole
@@ -261,7 +261,7 @@ class PermDomainTests(TestCase):
 
         # Create a domain with a very unique name to ensure it's distinct
         domain_name = "Test Domain User Joins UNIQUE"
-        with patch("permissible.models.role_based.core.update_permissions_for_object"):
+        with patch("permissible.models.role_based.core.reset_permissions"):
             domain = DummyDomain.objects.create(name=domain_name)
 
             # Remove any automatically created roles (clean slate)
@@ -328,6 +328,8 @@ class PermDomainTests(TestCase):
         """
         Test that reset_permissions uses guardian's assign_perm to set permissions.
         """
+        from permissible.models.utils.reset import reset_permissions
+
         # First completely clean the database
         DummyDomainRole.objects.all().delete()
         Group.objects.all().delete()
@@ -337,7 +339,7 @@ class PermDomainTests(TestCase):
         domain_name = "Test Domain Reset Permissions COMPLETELY UNIQUE"
 
         # Create the domain and a single view role
-        with patch("permissible.models.role_based.core.update_permissions_for_object"):
+        with patch("permissible.models.role_based.core.reset_permissions"):
             domain = DummyDomain.objects.create(name=domain_name)
             # Remove any automatically created roles
             DummyDomainRole.objects.filter(dummydomain=domain).delete()
@@ -367,7 +369,7 @@ class PermDomainTests(TestCase):
         ):
 
             # Call reset_permissions on our single view role
-            join_obj.reset_permissions()
+            reset_permissions([join_obj])
 
             # Verify expected permissions
             expected_perms = DummyDomain.get_permission_codenames(
