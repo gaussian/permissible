@@ -19,6 +19,16 @@
 
 {% load custom_tags %}
 
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    › <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_label|capfirst }}</a>
+    {% admin_change_url user as user_change_url %}
+    › <a href="{% url user_change_url user.pk %}">{{ user }}</a>
+    › {{ perm_domain_type|capfirst }} Permissions
+</div>
+{% endblock %}
+
 {% block content %}
 <div id="content-main">
     {% if form.errors %}

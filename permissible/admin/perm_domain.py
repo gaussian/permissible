@@ -200,6 +200,7 @@ class PermDomainAdminMixin(BasePermissibleViewMixin):
 
         context_extras = {
             "title": f"Add users to permissible groups of {obj}",
+            "obj": obj,
             "role_to_user_id": role_to_user_id,
             "users_to_perms": users_to_perms,
         }
@@ -298,6 +299,7 @@ class UserPermDomainAdminMixin(BasePermissibleViewMixin):
             ),
             "user": user,
             "perm_domain_name": perm_domain_class._meta.verbose_name,
+            "perm_domain_type": perm_domain_type,
         }
 
         return self.handle_permission_view(
