@@ -144,39 +144,3 @@ jobs:
           # If conflicts arise and are resolved, or if no conflicts occur, proceed to push
           git push origin HEAD:${{ github.head_ref }}
 
-      - name: Build release distributions
-        run: |
-          python -m pip install build
-          python -m build
-
-      - name: Store the distribution packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-package-distributions
-          path: dist/
-
-  publish-to-pypi:
-    name: >-
-      Publish Python 🐍 distribution 📦 to PyPI
-    
-    needs:
-      - build-new-version
-    
-    runs-on: ubuntu-latest
-    
-    environment:
-      name: pypi
-      url: https://pypi.org/p/permissible
-    
-    permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
-    
-    steps:
-      - name: Download all the dists
-        uses: actions/download-artifact@v4
-        with:
-          name: python-package-distributions
-          path: dist/
-      
-      - name: Publish distribution 📦 to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
