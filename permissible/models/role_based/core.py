@@ -206,6 +206,12 @@ class PermDomain(BasePermDomain):
             return group_join_obj.group_id
         return None
 
+    async def aget_member_group_id(self):
+        group_join_obj = await self.get_role_joins().filter(role="mem").afirst()
+        if group_join_obj:
+            return group_join_obj.group_id
+        return None
+
 
 class PermDomainFieldMixin(object):
     @classmethod
