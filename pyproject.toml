@@ -12,7 +12,7 @@ description = "Extended, flexible and powerful object-level and rule-driven perm
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-  "Django>=5,<6",
+  "Django>=5.2.13,<6",
   "djangorestframework>=3",
 ]
 
