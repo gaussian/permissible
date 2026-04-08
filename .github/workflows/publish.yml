@@ -1,12 +1,14 @@
 name: Publish to PyPI
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release New Version"]
+    types: [completed]
 
 jobs:
   publish-to-pypi:
     name: Publish Python distribution to PyPI
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
 
     environment:
@@ -18,12 +20,16 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: main
+          fetch-depth: 0
+
+      - name: Checkout latest version tag
+        run: git checkout $(git describe --tags --abbrev=0)
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.x'
 
