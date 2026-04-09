@@ -20,6 +20,7 @@ from permissible.models import PermissibleMixin, assign_short_perms
 
 # Define models for testing
 class TestFilterIntegrationModel(PermissibleMixin, models.Model):
+    __test__ = False
     name = models.CharField(max_length=100)
     is_public = models.BooleanField(default=False)
     status = models.CharField(max_length=20, default="active")

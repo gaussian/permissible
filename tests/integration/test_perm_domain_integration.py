@@ -22,6 +22,7 @@ from permissible.perm_def import p
 # Define domain models
 class TestIntegrationTeamModel(PermDomain):
     """A concrete PermDomain for testing"""
+    __test__ = False
 
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
@@ -45,6 +46,7 @@ class TestIntegrationTeamModel(PermDomain):
 
 class TestTeamRole(PermDomainRole):
     """A concrete PermDomainRole for testing"""
+    __test__ = False
 
     team = models.ForeignKey(
         TestIntegrationTeamModel, on_delete=models.CASCADE, related_name="team_roles"
@@ -98,6 +100,7 @@ class TestTeamRole(PermDomainRole):
 
 class TestTeamMember(PermDomainMember):
     """A concrete PermDomainMember for testing"""
+    __test__ = False
 
     team = models.ForeignKey(
         TestIntegrationTeamModel, on_delete=models.CASCADE, related_name="team_members"
@@ -111,6 +114,7 @@ class TestTeamMember(PermDomainMember):
 # Test content model owned by a team
 class TestContent(PermissibleMixin, models.Model):
     """Content model owned by a team to test domain-based permissions"""
+    __test__ = False
 
     title = models.CharField(max_length=100)
     content = models.TextField()

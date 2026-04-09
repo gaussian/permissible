@@ -18,6 +18,7 @@ from permissible.models import PermissibleMixin
 
 # Define a test model
 class TestLoggingModel(PermissibleMixin, models.Model):
+    __test__ = False
     name = models.CharField(max_length=100)
 
     class Meta:
@@ -36,6 +37,7 @@ class TestLoggingModel(PermissibleMixin, models.Model):
 
 
 class TestLoggingViewSet(ModelViewSet):
+    __test__ = False
     queryset = TestLoggingModel.objects.all()
     permission_classes = [PermissiblePerms]
     filter_backends = [PermissibleFilter]
