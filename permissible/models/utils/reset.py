@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .clear import clear_permissions_for_class
-from .update import bulk_update_permissions_for_objects, ObjectGroupPermSpec
+from .update import guardian_bulk_update_permissions, ObjectGroupPermSpec
 
 if TYPE_CHECKING:
     from permissible.models.role_based.core import PermDomain, PermDomainRole
@@ -53,4 +53,15 @@ def reset_permissions(perm_domain_roles: list[PermDomainRole], clear_existing=Fa
 
     # Bulk update all permissions
     if specs:
-        bulk_update_permissions_for_objects(specs)
+        guardian_bulk_update_permissions(specs)
+
+    # Send signals (outside the bulk update's atomic block)
+    from permissible.signals import perm_domain_role_permissions_updated
+
+    for spec in specs:
+        perm_domain_role_permissions_updated.send(
+            sender=spec.obj.__class__,
+            obj=spec.obj,
+            group=spec.group,
+            short_perm_codes=spec.short_perm_codes,
+        )

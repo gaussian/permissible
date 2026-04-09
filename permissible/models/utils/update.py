@@ -20,7 +20,7 @@ class ObjectGroupPermSpec:
     short_perm_codes: Sequence[str]
 
 
-def bulk_update_permissions_for_objects(
+def guardian_bulk_update_permissions(
     specs: Iterable[ObjectGroupPermSpec],
 ):
     """
@@ -161,22 +161,23 @@ def bulk_update_permissions_for_objects(
                         codename__in=all_add_codes,
                     )
                 }
-                
-                # Create any missing permissions
+
+                # Create any missing permissions (needed for dynamically-defined
+                # models where migrations haven't created the permissions yet)
                 missing_codes = all_add_codes - set(perms_by_code.keys())
                 if missing_codes:
-                    new_perms = []
-                    for code in missing_codes:
-                        # Create a readable permission name from the codename
-                        name = f"Can {code.replace('_', ' ')}"
-                        new_perms.append(Permission(
+                    logger.debug(
+                        "Creating missing permissions for %s: %s", ct, missing_codes
+                    )
+                    new_perms = [
+                        Permission(
                             content_type=ct,
                             codename=code,
-                            name=name,
-                        ))
+                            name=f"Can {code.replace('_', ' ')}",
+                        )
+                        for code in missing_codes
+                    ]
                     Permission.objects.bulk_create(new_perms, ignore_conflicts=True)
-                    
-                    # Refetch to get the IDs of newly created permissions
                     perms_by_code = {
                         p.codename: p
                         for p in Permission.objects.filter(
@@ -229,15 +230,3 @@ def bulk_update_permissions_for_objects(
             if to_delete_ids:
                 ObjPermModel.objects.filter(pk__in=to_delete_ids).delete()
 
-    # --- Signals outside the atomic block (semantics preserved) ---
-
-    from permissible.signals import perm_domain_role_permissions_updated
-
-    for Model, model_specs in specs_by_model.items():
-        for spec in model_specs:
-            perm_domain_role_permissions_updated.send(
-                sender=Model,
-                obj=spec.obj,
-                group=spec.group,
-                short_perm_codes=spec.short_perm_codes,
-            )
