@@ -23,6 +23,7 @@ from permissible.models import PermissibleMixin, assign_short_perms
 
 # Define models for testing
 class TestPermIntegrationModel(PermissibleMixin, models.Model):
+    __test__ = False
     name = models.CharField(max_length=100)
     is_public = models.BooleanField(default=False)
     owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, null=True)
@@ -58,6 +59,7 @@ class TestPermIntegrationModel(PermissibleMixin, models.Model):
 
 # Serializer for TestModel
 class TestModelSerializer(serializers.ModelSerializer):
+    __test__ = False
     class Meta:
         model = TestPermIntegrationModel
         fields = ["id", "name", "is_public", "owner"]
@@ -65,6 +67,7 @@ class TestModelSerializer(serializers.ModelSerializer):
 
 # ViewSet for testing
 class TestModelViewSet(ModelViewSet):
+    __test__ = False
     queryset = TestPermIntegrationModel.objects.all()
     serializer_class = TestModelSerializer
     permission_classes = [PermissiblePerms]

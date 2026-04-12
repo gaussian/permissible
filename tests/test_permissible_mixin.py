@@ -103,6 +103,7 @@ class MockUser:
 
 # Create test models that use PermissibleMixin
 class TestModel(PermissibleMixin, models.Model):
+    __test__ = False
     name = models.CharField(max_length=100)
 
     # Store policies locally for the mock to use

@@ -1,16 +1,20 @@
 """
 Tests for bulk_update_permissions_for_objects function.
 """
+from unittest.mock import patch, call
+
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
-from guardian.shortcuts import get_group_perms
+from guardian.shortcuts import assign_perm, get_group_perms
 
 from permissible.models import PermDomain, PermDomainRole, PermDomainMember
 from permissible.models.utils import bulk_update_permissions_for_objects, ObjectGroupPermSpec
+from permissible.models.utils.clear import clear_permissions_for_class
+from permissible.models.utils.reset import reset_permissions
 
 
 # Dummy concrete models for testing (renamed to avoid conflicts)
@@ -374,3 +378,112 @@ class BulkUpdatePermissionsTests(TestCase):
             ["view", "change"], include_app_label=False
         )
         self.assertEqual(set(perms), expected_perms)
+
+
+class SignalTests(TestCase):
+    """Tests that permission signals fire correctly."""
+
+    def setUp(self):
+        BulkTestDomainRole.objects.all().delete()
+        Group.objects.all().delete()
+        BulkTestDomain.objects.all().delete()
+
+    def test_reset_permissions_sends_signal_per_target(self):
+        """reset_permissions should send perm_domain_role_permissions_updated for each target."""
+        domain = BulkTestDomain.objects.create(name="Signal Test Domain")
+        group = Group.objects.create(name="Signal Test Group")
+        role = BulkTestDomainRole.objects.create(
+            role="view", group=group, bulktestdomain=domain
+        )
+
+        with patch(
+            "permissible.signals.perm_domain_role_permissions_updated.send"
+        ) as mock_send:
+            reset_permissions([role])
+
+        mock_send.assert_called_once()
+        _, kwargs = mock_send.call_args
+        self.assertEqual(kwargs["sender"], BulkTestDomain)
+        self.assertEqual(kwargs["obj"].pk, domain.pk)
+        self.assertEqual(kwargs["group"], group)
+        self.assertEqual(kwargs["short_perm_codes"], ["view"])
+
+    def test_reset_permissions_sends_signal_for_multiple_roles(self):
+        """reset_permissions with multiple roles sends one signal per (role, target)."""
+        domain = BulkTestDomain.objects.create(name="Multi Signal Domain")
+        group1 = Group.objects.create(name="Multi Signal Group 1")
+        group2 = Group.objects.create(name="Multi Signal Group 2")
+        role1 = BulkTestDomainRole.objects.create(
+            role="view", group=group1, bulktestdomain=domain
+        )
+        role2 = BulkTestDomainRole.objects.create(
+            role="con", group=group2, bulktestdomain=domain
+        )
+
+        with patch(
+            "permissible.signals.perm_domain_role_permissions_updated.send"
+        ) as mock_send:
+            reset_permissions([role1, role2])
+
+        self.assertEqual(mock_send.call_count, 2)
+
+
+class ClearPermissionsTests(TestCase):
+    """Tests for clear_permissions_for_class."""
+
+    def setUp(self):
+        BulkTestDomainRole.objects.all().delete()
+        Group.objects.all().delete()
+        BulkTestDomain.objects.all().delete()
+
+    def test_clear_removes_all_permissions(self):
+        """clear_permissions_for_class removes all permissions for a group on a class."""
+        domain = BulkTestDomain.objects.create(name="Clear Test Domain")
+        group = Group.objects.create(name="Clear Test Group")
+
+        # Assign some permissions
+        specs = [
+            ObjectGroupPermSpec(
+                obj=domain, group=group, short_perm_codes=["view", "change"]
+            )
+        ]
+        bulk_update_permissions_for_objects(specs)
+        self.assertTrue(len(get_group_perms(group, domain)) > 0)
+
+        # Clear
+        clear_permissions_for_class(group=group, obj_class=BulkTestDomain)
+
+        # Verify all gone
+        self.assertEqual(len(get_group_perms(group, domain)), 0)
+
+    def test_clear_sends_signal(self):
+        """clear_permissions_for_class sends permissions_cleared signal."""
+        domain = BulkTestDomain.objects.create(name="Clear Signal Domain")
+        group = Group.objects.create(name="Clear Signal Group")
+
+        with patch("permissible.signals.permissions_cleared.send") as mock_send:
+            clear_permissions_for_class(group=group, obj_class=BulkTestDomain)
+
+        mock_send.assert_called_once_with(sender=BulkTestDomain, group=group)
+
+    def test_clear_respects_skip_obj_ids(self):
+        """clear_permissions_for_class skips objects in skip_obj_ids."""
+        domain1 = BulkTestDomain.objects.create(name="Clear Skip Domain 1")
+        domain2 = BulkTestDomain.objects.create(name="Clear Skip Domain 2")
+        group = Group.objects.create(name="Clear Skip Group")
+
+        # Assign perms to both domains
+        specs = [
+            ObjectGroupPermSpec(obj=domain1, group=group, short_perm_codes=["view"]),
+            ObjectGroupPermSpec(obj=domain2, group=group, short_perm_codes=["view"]),
+        ]
+        bulk_update_permissions_for_objects(specs)
+
+        # Clear but skip domain1
+        clear_permissions_for_class(
+            group=group, obj_class=BulkTestDomain, skip_obj_ids=[str(domain1.pk)]
+        )
+
+        # domain1 should still have perms, domain2 should not
+        self.assertTrue(len(get_group_perms(group, domain1)) > 0)
+        self.assertEqual(len(get_group_perms(group, domain2)), 0)

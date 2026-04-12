@@ -85,34 +85,40 @@ class PermDomain(BasePermDomain):
     def reset_domain_roles(self):
         """
         Create the associated `PermDomainRole` and `Group` objects for this
-        `PermDomain`.
+        `PermDomain`, then batch-reset all their permissions in a single call.
         """
         # Find the PermDomainRole model
         domain_role_model_class: Type[PermDomainRole] = (
             self.get_role_join_rel().related_model
         )
 
-        # print(f"Resetting permissions for PermDomain {self}")
-
         # Create/update PermDomainRole for each role in possible roles
         role_choices = domain_role_model_class._meta.get_field("role").choices
         domain_field = domain_role_model_class.get_domain_field()
         assert isinstance(role_choices, Iterable)
 
-        domain_role_objs_to_reset_perms = []
-        for role, _ in role_choices:
-            domain_role_obj, created = domain_role_model_class.objects.get_or_create(
-                role=role,
-                **{domain_field.attname: self.pk},
+        # 1 query: fetch existing roles
+        existing_roles_by_key = {
+            r.role: r
+            for r in domain_role_model_class.objects.filter(
+                **{domain_field.attname: self.pk}
             )
+        }
 
-            # Force reassigning of permissions if not a new PermDomainRole
-            if not created:
-                domain_role_obj: PermDomainRole
-                domain_role_objs_to_reset_perms.append(domain_role_obj)
+        # Build missing roles
+        new_role_objs = [
+            domain_role_model_class(role=role, **{domain_field.name: self})
+            for role, _ in role_choices
+            if role not in existing_roles_by_key
+        ]
 
-        # Perform reset
-        reset_permissions(domain_role_objs_to_reset_perms, clear_existing=False)
+        # N+1 queries: create Groups individually + bulk create PermDomainRoles
+        if new_role_objs:
+            domain_role_model_class.bulk_create_with_groups(new_role_objs)
+
+        # ~3 queries: single batched permission reset for all roles
+        all_domain_role_objs = list(existing_roles_by_key.values()) + new_role_objs
+        reset_permissions(all_domain_role_objs, clear_existing=False)
 
     def get_group_ids_for_roles(self, roles=None):
         domain_role_model_class: Type[PermDomainRole] = (
@@ -351,6 +357,21 @@ class PermDomainRole(
         reset_permissions([self])
 
         return super().save(*args, **kwargs)
+
+    @classmethod
+    def bulk_create_with_groups(cls, role_objs):
+        """
+        Bulk-create PermDomainRoles with their associated Groups.
+        Groups are created individually (need PKs for the OneToOneField),
+        then PermDomainRoles are bulk_created in a single query.
+
+        Does NOT call reset_permissions — the caller is responsible for that.
+        """
+        for role_obj in role_objs:
+            group = Group.objects.create(name=str(role_obj))
+            role_obj.group = group
+        if role_objs:
+            cls.objects.bulk_create(role_objs)
 
     @classmethod
     def get_domain_member_model_class(cls) -> Type[PermDomainMember]:

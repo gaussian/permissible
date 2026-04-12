@@ -488,5 +488,119 @@ class PermDomainTests(TestCase):
         self.assertTrue(result, "Direct condition check should pass with matching ID")
 
 
+    def test_reset_domain_roles_bulk_create_group_pks(self):
+        """
+        Regression test: bulk_create of PermDomainRoles must not reference
+        unsaved Group objects. On MySQL, Group.objects.bulk_create() does not
+        set PKs on the returned objects, so assigning group=<unsaved Group>
+        then calling bulk_create on PermDomainRoles raises ValueError.
+
+        We simulate the MySQL behaviour by patching bulk_create to not set PKs.
+        """
+        DummyDomainRole.objects.all().delete()
+        Group.objects.all().delete()
+        DummyDomain.objects.all().delete()
+
+        original_bulk_create = Group.objects.bulk_create.__func__
+
+        def bulk_create_without_pks(manager, objs, *args, **kwargs):
+            """Simulate MySQL: bulk_create saves rows but doesn't set PKs."""
+            result = original_bulk_create(manager, objs, *args, **kwargs)
+            for obj in result:
+                obj.pk = None
+                obj.id = None
+            return result
+
+        with patch.object(
+            type(Group.objects), "bulk_create", bulk_create_without_pks
+        ):
+            # This should NOT raise ValueError about unsaved related objects
+            domain = DummyDomain.objects.create(
+                name="Bulk Create PK Test Domain"
+            )
+
+        # Verify roles were created correctly
+        role_choices = list(DummyDomainRole._meta.get_field("role").choices)
+        roles_qs = DummyDomainRole.objects.filter(dummydomain=domain)
+        self.assertEqual(roles_qs.count(), len(role_choices))
+
+        for role_obj in roles_qs:
+            self.assertTrue(
+                Group.objects.filter(pk=role_obj.group_id).exists(),
+                f"Group for role {role_obj.role} should exist in DB",
+            )
+
+    def test_reset_domain_roles_full_path(self):
+        """
+        Test that reset_domain_roles creates Groups, PermDomainRoles, and
+        assigns permissions in a single batched call — without mocking
+        reset_permissions. This exercises the full bulk_create path.
+        """
+        from guardian.shortcuts import get_group_perms
+
+        DummyDomainRole.objects.all().delete()
+        Group.objects.all().delete()
+        DummyDomain.objects.all().delete()
+
+        # Create domain — triggers reset_domain_roles via save()
+        domain = DummyDomain.objects.create(name="Full Path Test Domain")
+
+        # Verify all roles were created
+        role_choices = list(DummyDomainRole._meta.get_field("role").choices)
+        roles_qs = DummyDomainRole.objects.filter(dummydomain=domain)
+        self.assertEqual(roles_qs.count(), len(role_choices))
+
+        # Verify each role has a saved Group with a valid PK
+        for role_obj in roles_qs:
+            self.assertIsNotNone(role_obj.group_id)
+            self.assertTrue(
+                Group.objects.filter(pk=role_obj.group_id).exists(),
+                f"Group for role {role_obj.role} should exist in DB",
+            )
+
+        # Verify permissions were actually assigned per ROLE_DEFINITIONS
+        for role_obj in roles_qs:
+            _, short_perm_codes = DummyDomainRole.ROLE_DEFINITIONS[role_obj.role]
+            expected = DummyDomain.get_permission_codenames(
+                short_perm_codes, include_app_label=False
+            )
+            actual = set(get_group_perms(role_obj.group, domain))
+            self.assertEqual(
+                expected,
+                actual,
+                f"Permissions mismatch for role {role_obj.role}: "
+                f"expected {expected}, got {actual}",
+            )
+
+    def test_reset_domain_roles_idempotent(self):
+        """
+        Calling reset_domain_roles twice should not fail or create duplicates.
+        """
+        from guardian.shortcuts import get_group_perms
+
+        DummyDomainRole.objects.all().delete()
+        Group.objects.all().delete()
+        DummyDomain.objects.all().delete()
+
+        domain = DummyDomain.objects.create(name="Idempotent Test Domain")
+        role_choices = list(DummyDomainRole._meta.get_field("role").choices)
+
+        # Call reset_domain_roles again
+        domain.reset_domain_roles()
+
+        # Still the same number of roles
+        roles_qs = DummyDomainRole.objects.filter(dummydomain=domain)
+        self.assertEqual(roles_qs.count(), len(role_choices))
+
+        # Permissions still correct
+        for role_obj in roles_qs:
+            _, short_perm_codes = DummyDomainRole.ROLE_DEFINITIONS[role_obj.role]
+            expected = DummyDomain.get_permission_codenames(
+                short_perm_codes, include_app_label=False
+            )
+            actual = set(get_group_perms(role_obj.group, domain))
+            self.assertEqual(expected, actual)
+
+
 if __name__ == "__main__":
     unittest.main()
