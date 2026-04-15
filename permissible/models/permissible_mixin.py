@@ -5,6 +5,7 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 
 from __future__ import annotations
 
+import logging
 from typing import Type, Optional
 
 from django.contrib.auth.models import PermissionsMixin
@@ -12,6 +13,8 @@ from django.contrib.auth.models import PermissionsMixin
 from permissible.perm_def import BasePermDefObj, BasePermDef
 
 from .policy_lookup import PolicyLooupMixin
+
+logger = logging.getLogger(__name__)
 
 
 class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
@@ -129,6 +132,14 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
         :return:
         """
 
+        if action is None:
+            logger.warning(
+                "has_global_permission called with action=None for %s — denying. "
+                "This usually means the caller did not resolve an action.",
+                cls,
+            )
+            return False
+
         # Superusers override
         if user and user.is_superuser:
             return True
@@ -178,6 +189,14 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
         :param context:
         :return:
         """
+
+        if action is None:
+            logger.warning(
+                "has_object_permission called with action=None for %s — denying. "
+                "This usually means the caller did not resolve an action.",
+                self.__class__,
+            )
+            return False
 
         # Superusers override
         if user and user.is_superuser:
