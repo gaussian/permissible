@@ -269,6 +269,29 @@ class TestPermissibleMixin(unittest.TestCase):
             )
 
     @patch("permissible.models.permissible_mixin.PolicyLooupMixin.get_policies")
+    def test_none_action_denies_and_logs(self, mock_get_policies):
+        """action=None should deny (not raise) and log a warning."""
+        mock_get_policies.return_value = self.test_model._policies
+
+        with self.assertLogs(
+            "permissible.models.permissible_mixin", level="WARNING"
+        ) as cm:
+            self.assertFalse(
+                TestModel.has_global_permission(self.superuser, None),
+                "action=None should deny even for superusers",
+            )
+        self.assertTrue(any("action=None" in msg for msg in cm.output))
+
+        with self.assertLogs(
+            "permissible.models.permissible_mixin", level="WARNING"
+        ) as cm:
+            self.assertFalse(
+                self.test_model.has_object_permission(self.superuser, None),
+                "action=None should deny even for superusers",
+            )
+        self.assertTrue(any("action=None" in msg for msg in cm.output))
+
+    @patch("permissible.models.permissible_mixin.PolicyLooupMixin.get_policies")
     def test_object_permissions_view_only(self, mock_get_policies):
         """Test that view-only users have appropriate object permissions"""
         mock_get_policies.return_value = self.test_model._policies
