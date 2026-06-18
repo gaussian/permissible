@@ -47,6 +47,12 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
         be granted.
         """
 
+        # Workaround to ensure DjangoModelPermissions are not applied to the
+        # root view when using DefaultRouter. Must run before `_queryset()`,
+        # which asserts the view has a queryset (APIRootView has none).
+        if getattr(view, "_ignore_model_permissions", False):
+            return True
+
         # We require PermissibleFilter to be used on the view
         queryset = self._queryset(view)
         self._check_view_config(view, queryset)
@@ -54,11 +60,6 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
         assert getattr(
             request, "user", None
         ), "User object must be available in request for PermissiblePerms"
-
-        # Workaround to ensure DjangoModelPermissions are not applied
-        # to the root view when using DefaultRouter.
-        if getattr(view, "_ignore_model_permissions", False):
-            return True
 
         model_class: Type[PermissibleMixin] = queryset.model
         perm_check_kwargs = {

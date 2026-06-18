@@ -144,6 +144,20 @@ class TestPermissiblePerms(unittest.TestCase):
         result = perms.has_permission(request, view)
         self.assertTrue(result)
 
+    def test_ignore_model_permissions_without_queryset(self):
+        # Regression: the DefaultRouter root (APIRootView) sets
+        # `_ignore_model_permissions` and has no queryset/get_queryset. The
+        # short-circuit must run before the real `_queryset()`, which would
+        # otherwise AssertionError (the prod GET /api/v1/ 500). Note we use a
+        # real PermissiblePerms here, NOT get_permission_instance, which
+        # monkey-patches `_queryset` away and hides the bug.
+        class RootView:
+            _ignore_model_permissions = True  # no queryset / get_queryset
+
+        request = DummyRequest(user=DummyUser())
+        perms = PermissiblePerms()
+        self.assertTrue(perms.has_permission(request, RootView()))
+
     def test_global_permission_false(self):
         # Authenticated user but global permission check fails should return False.
         DummyModel.global_permission = False
