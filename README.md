@@ -65,6 +65,27 @@ ACTION_POLICIES = {
 }
 ```
 
+Every action must have an explicit policy — if a request resolves to an action
+with no policy defined, permission is denied and an assertion is raised (a
+deliberate guardrail against forgetting to configure an action).
+
+The one exception is DRF's implicit `"metadata"` action, which DRF sets for
+every `OPTIONS` request on every ViewSet. It never corresponds to a policy, so
+it is **denied by default** (returning `403`, and logging a warning) rather than
+raising. If you want `OPTIONS`/introspection to work for a model, opt in by
+defining an explicit `"metadata"` policy for it, e.g.:
+```
+ACTION_POLICIES = {
+    "surveys.Survey": {
+        "global": {
+            ...
+            "metadata": NO_RESTRICTION,  # or IS_AUTHENTICATED, etc.
+        },
+        ...
+    }
+}
+```
+
 With the permissions configured, now we can force different views to use them:
 - If you would like the permissions to work for API views (via
 `django-rest-framework`): Add `PermissiblePerms` to the `permission_classes` for
