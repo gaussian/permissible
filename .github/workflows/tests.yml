@@ -7,6 +7,12 @@ on:
       - main
       - develop
 
+# Cancel superseded runs: a new push to the same branch/PR stops the
+# in-progress run instead of letting both finish.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pytest:
     name: Run pytest
@@ -25,6 +31,8 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install dependencies
         run: uv sync --extra guardian --group dev
