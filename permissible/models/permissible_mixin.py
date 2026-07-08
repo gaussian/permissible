@@ -17,6 +17,12 @@ from .policy_lookup import PolicyLooupMixin
 logger = logging.getLogger(__name__)
 
 
+# DRF sets `view.action = "metadata"` for every OPTIONS request (see
+# ViewSetMixin.initialize_request). Such implicit actions never have a policy, so
+# a missing one must deny cleanly rather than trip the assertion below (a 500).
+DRF_IMPLICIT_ACTIONS = frozenset({"metadata"})
+
+
 class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
     """
     Model mixin that allows a model to check permissions, in accordance with
@@ -151,9 +157,20 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
             perm_def = cls.get_global_perms_def("retrieve")
 
         # Deny if no EXPLICIT permission check is defined
-        assert (
-            perm_def is not None
-        ), f"No global permission defined for {cls} action '{action}' in `policies.ACTION_POLICIES`"
+        if perm_def is None:
+            if action in DRF_IMPLICIT_ACTIONS:
+                logger.warning(
+                    "Denying implicit DRF action '%s' for %s (no policy defined; "
+                    "add one to ACTION_POLICIES to override).",
+                    action,
+                    cls,
+                )
+                return False
+
+            raise AssertionError(
+                f"No global permission defined for {cls} action '{action}' in "
+                f"`policies.ACTION_POLICIES`"
+            )
 
         # Check permissions on the class
         return perm_def.check_global(
@@ -204,9 +221,20 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
 
         # Get the PermDef for this action (object permissions)
         perm_def = self.get_object_perm_def(action)
-        assert (
-            perm_def is not None
-        ), f"No object permission for {self.__class__.__name__} (action '{action}') in `policies.ACTION_POLICIES`"
+        if perm_def is None:
+            if action in DRF_IMPLICIT_ACTIONS:
+                logger.warning(
+                    "Denying implicit DRF action '%s' for %s (no policy defined; "
+                    "add one to ACTION_POLICIES to override).",
+                    action,
+                    self.__class__,
+                )
+                return False
+
+            raise AssertionError(
+                f"No object permission for {self.__class__.__name__} "
+                f"(action '{action}') in `policies.ACTION_POLICIES`"
+            )
 
         # Check permissions on the object
         return perm_def.check_obj(
