@@ -292,6 +292,64 @@ class TestPermissibleMixin(unittest.TestCase):
         self.assertTrue(any("action=None" in msg for msg in cm.output))
 
     @patch("permissible.models.permissible_mixin.PolicyLooupMixin.get_policies")
+    def test_metadata_action_denies_and_logs(self, mock_get_policies):
+        """DRF's implicit "metadata" (OPTIONS) action denies + logs, not raises."""
+        mock_get_policies.return_value = self.test_model._policies
+
+        with self.assertLogs(
+            "permissible.models.permissible_mixin", level="WARNING"
+        ) as cm:
+            self.assertFalse(
+                TestModel.has_global_permission(self.view_user, "metadata"),
+                "metadata (OPTIONS) should deny, not raise",
+            )
+        self.assertTrue(any("metadata" in msg for msg in cm.output))
+
+        with self.assertLogs(
+            "permissible.models.permissible_mixin", level="WARNING"
+        ) as cm:
+            self.assertFalse(
+                self.test_model.has_object_permission(self.view_user, "metadata"),
+                "metadata (OPTIONS) should deny, not raise",
+            )
+        self.assertTrue(any("metadata" in msg for msg in cm.output))
+
+    @patch("permissible.models.permissible_mixin.PolicyLooupMixin.get_policies")
+    def test_unknown_action_still_raises(self, mock_get_policies):
+        """A non-implicit action with no policy still raises (the guardrail)."""
+        mock_get_policies.return_value = self.test_model._policies
+
+        with self.assertRaises(AssertionError):
+            TestModel.has_global_permission(self.view_user, "some_custom_action")
+
+        with self.assertRaises(AssertionError):
+            self.test_model.has_object_permission(self.view_user, "some_custom_action")
+
+    @patch("permissible.models.permissible_mixin.PolicyLooupMixin.get_policies")
+    def test_metadata_action_honors_explicit_policy(self, mock_get_policies):
+        """An explicit "metadata" policy wins over the deny-by-default carve-out."""
+        policies = {
+            "global": {**self.test_model._policies["global"], "metadata": p(["view"])},
+            "object": {**self.test_model._policies["object"], "metadata": p(["view"])},
+        }
+        mock_get_policies.return_value = policies
+
+        self.assertTrue(
+            TestModel.has_global_permission(self.view_user, "metadata"),
+            "An explicit metadata policy should be honored",
+        )
+
+    @patch("permissible.models.permissible_mixin.PolicyLooupMixin.get_policies")
+    def test_metadata_action_superuser(self, mock_get_policies):
+        """Superusers short-circuit before the policy lookup, even for metadata."""
+        mock_get_policies.return_value = self.test_model._policies
+
+        self.assertTrue(
+            TestModel.has_global_permission(self.superuser, "metadata"),
+            "Superuser should pass the metadata action",
+        )
+
+    @patch("permissible.models.permissible_mixin.PolicyLooupMixin.get_policies")
     def test_object_permissions_view_only(self, mock_get_policies):
         """Test that view-only users have appropriate object permissions"""
         mock_get_policies.return_value = self.test_model._policies
