@@ -66,6 +66,7 @@ jobs:
           files_to_update = {
               'pyproject.toml': r'(version\s*=\s*")(\d+\.\d+\.\d+)(")',
               'permissible/__init__.py': r'(__version__\s*=\s*")(\d+\.\d+\.\d+)(")',
+              'uv.lock': r'(name = "permissible"\nversion = ")(\d+\.\d+\.\d+)(")',
           }
 
           new_version = None
@@ -111,7 +112,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           # Add all files that might have been updated.
-          git add pyproject.toml permissible/__init__.py
+          git add pyproject.toml permissible/__init__.py uv.lock
           git commit -m "Increment version number to ${{ steps.versioning.outputs.newVersion }}"
           git push
           git tag v${{ steps.versioning.outputs.newVersion }}
