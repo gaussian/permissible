@@ -30,12 +30,16 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
       - name: Run tests
         run: uv run --all-extras pytest
