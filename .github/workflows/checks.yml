@@ -1,0 +1,58 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version: '3.12'
+      - name: Ruff lint
+        run: uv run --all-extras ruff check permissible/ tests/
+      - name: Ruff format check
+        run: uv run --all-extras ruff format --check permissible/ tests/
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version: ${{ matrix.python-version }}
+      - name: Run tests
+        run: uv run --all-extras pytest
+
+  # Aggregate gate — the ONLY check the branch ruleset requires. Passes only if
+  # every needed job succeeded. `if: always()` is required so a failed/skipped
+  # upstream job can't let this be skipped (which GitHub treats as passing).
+  ci:
+    name: ci
+    needs: [lint, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required checks passed
+        run: |
+          [ "${{ needs.lint.result }}" = "success" ] && [ "${{ needs.test.result }}" = "success" ] || { echo "a required check did not succeed"; exit 1; }

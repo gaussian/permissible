@@ -60,6 +60,7 @@ class TestPermIntegrationModel(PermissibleMixin, models.Model):
 # Serializer for TestModel
 class TestModelSerializer(serializers.ModelSerializer):
     __test__ = False
+
     class Meta:
         model = TestPermIntegrationModel
         fields = ["id", "name", "is_public", "owner"]

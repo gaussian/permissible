@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "permissible"
-version = "0.8.0"
+version = "0.8.1"
 description = "Extended, flexible and powerful object-level and rule-driven permissions for Django & Django REST framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -30,9 +30,22 @@ Issues = "https://github.com/gaussian/permissible/issues"
 dev = [
     "pytest>=9.0.3",
     "pytest-django>=4.12.0",
+    "ruff>=0.10",
 ]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff.lint]
+# Pin to the classic real-errors rule set (pyflakes + core pycodestyle) rather
+# than ruff's newer, broader default which pulls in style/modernization rules.
+# F401 (side-effect imports / re-exports look unused; F821 still catches
+# genuinely-missing imports) and F841 (intentional unused locals) are excluded.
+select = ["E4", "E7", "E9", "F"]
+ignore = ["F401", "F841"]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py uses star imports to re-export the public API.
+"__init__.py" = ["F403"]

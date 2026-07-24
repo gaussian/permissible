@@ -92,7 +92,6 @@ class HierarchicalPermDomain(PermDomain):
         # of the PREVIOUS parent as well as the CURRENT parent.
         # (because the permission set of the parent may have changed)
         if old_parent_id != self.parent_id:
-
             # Get the ancestor IDs for both the old and new ancestor chains
             old_ancestor_ids = (
                 model_class.get_ancestor_ids_from_id(old_parent_id)

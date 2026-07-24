@@ -249,8 +249,8 @@ class UserPermDomainAdminMixin(BasePermissibleViewMixin):
                 path(
                     f"<path:object_id>/permissible/{perm_type}/",
                     self.admin_site.admin_view(
-                        lambda request, object_id, pt=perm_type: self.user_permissible_view(
-                            request, object_id, pt
+                        lambda request, object_id, pt=perm_type: (
+                            self.user_permissible_view(request, object_id, pt)
                         )
                     ),
                     name=f"{self.model._meta.app_label}_{self.model._meta.model_name}_permissible_{perm_type}",

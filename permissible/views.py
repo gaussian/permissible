@@ -19,9 +19,9 @@ class CheckViewConfigMixin:
         from .filters import PermissibleFilter
         from .permissions import PermissiblePerms
 
-        assert queryset.model and issubclass(
-            queryset.model, PermissibleMixin
-        ), f"Model class must be a subclass of `PermissibleMixin` ({queryset.model})"
+        assert queryset.model and issubclass(queryset.model, PermissibleMixin), (
+            f"Model class must be a subclass of `PermissibleMixin` ({queryset.model})"
+        )
 
         # Check that view has permission_classes with PermissiblePerms, OR
         # if permission_classes is empty then check the default permission_classes
@@ -51,6 +51,6 @@ class CheckViewConfigMixin:
             default_filter_backends = getattr(settings, "REST_FRAMEWORK", dict()).get(
                 "DEFAULT_FILTER_BACKENDS", []
             )
-            assert (
-                "permissible.filters.PermissibleFilter" in default_filter_backends
-            ), f"View ({view}) must have a filter backend of PermissibleFilter"
+            assert "permissible.filters.PermissibleFilter" in default_filter_backends, (
+                f"View ({view}) must have a filter backend of PermissibleFilter"
+            )

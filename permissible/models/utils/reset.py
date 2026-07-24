@@ -23,7 +23,6 @@ def reset_permissions(perm_domain_roles: list[PermDomainRole], clear_existing=Fa
     specs = []
 
     for perm_domain_role in perm_domain_roles:
-
         # Find the domain object associated with thie object (PermDomain)
         domain_field = perm_domain_role.get_domain_field()
         domain_obj: PermDomain = getattr(perm_domain_role, domain_field.name)
@@ -45,11 +44,13 @@ def reset_permissions(perm_domain_roles: list[PermDomainRole], clear_existing=Fa
         # of `PermDomain` called `HierarchicalPermDomain`) this may be different (eg
         # it may be chidren objects)
         for obj in domain_obj.get_permission_targets():
-            specs.append(ObjectGroupPermSpec(
-                obj=obj,
-                group=perm_domain_role.group,
-                short_perm_codes=short_perm_codes,
-            ))
+            specs.append(
+                ObjectGroupPermSpec(
+                    obj=obj,
+                    group=perm_domain_role.group,
+                    short_perm_codes=short_perm_codes,
+                )
+            )
 
     # Bulk update all permissions
     if specs:
