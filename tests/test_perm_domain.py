@@ -391,7 +391,6 @@ class PermDomainTests(TestCase):
             patch.object(DummyDomainRole, "get_domain_field") as mock_get_field,
             patch("permissible.utils.signals.get_subclasses") as mock_get_subclasses,
         ):
-
             # Set up our field mock
             field_mock = MagicMock()
             field_mock.attname = "dummydomain_id"
@@ -422,7 +421,6 @@ class PermDomainTests(TestCase):
             patch.object(DummyDomainRole, "get_domain_field") as mock_get_field,
             patch("permissible.utils.signals.get_subclasses") as mock_get_subclasses,
         ):
-
             # Configure mock to avoid testing assertion failure
             mock_get_field.return_value = MagicMock()
             mock_get_subclasses.return_value = [DummyDomainRole]
@@ -487,7 +485,6 @@ class PermDomainTests(TestCase):
         result = perm_def_direct.check_obj(dummy, test_user, context)
         self.assertTrue(result, "Direct condition check should pass with matching ID")
 
-
     def test_reset_domain_roles_bulk_create_group_pks(self):
         """
         Regression test: bulk_create of PermDomainRoles must not reference
@@ -511,13 +508,9 @@ class PermDomainTests(TestCase):
                 obj.id = None
             return result
 
-        with patch.object(
-            type(Group.objects), "bulk_create", bulk_create_without_pks
-        ):
+        with patch.object(type(Group.objects), "bulk_create", bulk_create_without_pks):
             # This should NOT raise ValueError about unsaved related objects
-            domain = DummyDomain.objects.create(
-                name="Bulk Create PK Test Domain"
-            )
+            domain = DummyDomain.objects.create(name="Bulk Create PK Test Domain")
 
         # Verify roles were created correctly
         role_choices = list(DummyDomainRole._meta.get_field("role").choices)

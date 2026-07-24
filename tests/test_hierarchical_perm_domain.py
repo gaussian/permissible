@@ -75,7 +75,6 @@ class DummyHierarchicalDomainMember(PermDomainMember):
 
 
 class HierarchicalPermDomainTests(TestCase):
-
     def setUp(self):
         # Create a simple hierarchy:
         #         Root

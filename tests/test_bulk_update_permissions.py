@@ -1,6 +1,7 @@
 """
 Tests for bulk_update_permissions_for_objects function.
 """
+
 from unittest.mock import patch, call
 
 from django.test import TestCase
@@ -12,7 +13,10 @@ from django.db import models
 from guardian.shortcuts import assign_perm, get_group_perms
 
 from permissible.models import PermDomain, PermDomainRole, PermDomainMember
-from permissible.models.utils import bulk_update_permissions_for_objects, ObjectGroupPermSpec
+from permissible.models.utils import (
+    bulk_update_permissions_for_objects,
+    ObjectGroupPermSpec,
+)
 from permissible.models.utils.clear import clear_permissions_for_class
 from permissible.models.utils.reset import reset_permissions
 
@@ -27,7 +31,9 @@ class BulkTestDomain(PermDomain):
         Group, through="BulkTestDomainRole", related_name="bulk_test_domain_groups"
     )
     users = models.ManyToManyField(
-        get_user_model(), through="BulkTestDomainMember", related_name="bulk_test_domain_users"
+        get_user_model(),
+        through="BulkTestDomainMember",
+        related_name="bulk_test_domain_users",
     )
 
     class Meta:
@@ -62,7 +68,9 @@ class BulkTestDomainMember(PermDomainMember):
     """A concrete PermDomainMember for testing."""
 
     bulktestdomain = models.ForeignKey(
-        BulkTestDomain, on_delete=models.CASCADE, related_name="bulk_test_domain_members"
+        BulkTestDomain,
+        on_delete=models.CASCADE,
+        related_name="bulk_test_domain_members",
     )
 
     class Meta:
@@ -105,7 +113,9 @@ class BulkUpdatePermissionsTests(TestCase):
 
         # Verify permissions were set
         perms = get_group_perms(group, domain)
-        expected_perms = BulkTestDomain.get_permission_codenames(["view"], include_app_label=False)
+        expected_perms = BulkTestDomain.get_permission_codenames(
+            ["view"], include_app_label=False
+        )
         self.assertEqual(set(perms), expected_perms)
 
     def test_bulk_update_single_object_multiple_permissions(self):
@@ -137,14 +147,18 @@ class BulkUpdatePermissionsTests(TestCase):
 
         specs = [
             ObjectGroupPermSpec(obj=domain1, group=group, short_perm_codes=["view"]),
-            ObjectGroupPermSpec(obj=domain2, group=group, short_perm_codes=["view", "change"]),
+            ObjectGroupPermSpec(
+                obj=domain2, group=group, short_perm_codes=["view", "change"]
+            ),
         ]
 
         bulk_update_permissions_for_objects(specs)
 
         # Verify permissions for domain1
         perms1 = get_group_perms(group, domain1)
-        expected_perms1 = BulkTestDomain.get_permission_codenames(["view"], include_app_label=False)
+        expected_perms1 = BulkTestDomain.get_permission_codenames(
+            ["view"], include_app_label=False
+        )
         self.assertEqual(set(perms1), expected_perms1)
 
         # Verify permissions for domain2
@@ -162,14 +176,18 @@ class BulkUpdatePermissionsTests(TestCase):
 
         specs = [
             ObjectGroupPermSpec(obj=domain, group=group1, short_perm_codes=["view"]),
-            ObjectGroupPermSpec(obj=domain, group=group2, short_perm_codes=["view", "change", "delete"]),
+            ObjectGroupPermSpec(
+                obj=domain, group=group2, short_perm_codes=["view", "change", "delete"]
+            ),
         ]
 
         bulk_update_permissions_for_objects(specs)
 
         # Verify permissions for group1
         perms1 = get_group_perms(group1, domain)
-        expected_perms1 = BulkTestDomain.get_permission_codenames(["view"], include_app_label=False)
+        expected_perms1 = BulkTestDomain.get_permission_codenames(
+            ["view"], include_app_label=False
+        )
         self.assertEqual(set(perms1), expected_perms1)
 
         # Verify permissions for group2
@@ -252,7 +270,9 @@ class BulkUpdatePermissionsTests(TestCase):
 
         # First, set some permissions
         specs1 = [
-            ObjectGroupPermSpec(obj=domain, group=group, short_perm_codes=["view", "change"])
+            ObjectGroupPermSpec(
+                obj=domain, group=group, short_perm_codes=["view", "change"]
+            )
         ]
         bulk_update_permissions_for_objects(specs1)
 
@@ -261,9 +281,7 @@ class BulkUpdatePermissionsTests(TestCase):
         self.assertTrue(len(perms_before) > 0)
 
         # Now update to empty permissions
-        specs2 = [
-            ObjectGroupPermSpec(obj=domain, group=group, short_perm_codes=[])
-        ]
+        specs2 = [ObjectGroupPermSpec(obj=domain, group=group, short_perm_codes=[])]
         bulk_update_permissions_for_objects(specs2)
 
         # Verify all permissions removed
@@ -273,7 +291,9 @@ class BulkUpdatePermissionsTests(TestCase):
     def test_bulk_update_many_objects_many_groups(self):
         """Test bulk update with many objects and groups for performance."""
         # Create multiple domains and groups
-        domains = [BulkTestDomain.objects.create(name=f"Test Domain {i}") for i in range(10)]
+        domains = [
+            BulkTestDomain.objects.create(name=f"Test Domain {i}") for i in range(10)
+        ]
         groups = [Group.objects.create(name=f"Test Group {i}") for i in range(5)]
 
         # Create specs for all combinations
@@ -348,7 +368,9 @@ class BulkUpdatePermissionsTests(TestCase):
 
         # Verify permissions are still correct
         perms = get_group_perms(group, domain)
-        expected_perms = BulkTestDomain.get_permission_codenames(["view"], include_app_label=False)
+        expected_perms = BulkTestDomain.get_permission_codenames(
+            ["view"], include_app_label=False
+        )
         self.assertEqual(set(perms), expected_perms)
 
     def test_bulk_update_with_empty_spec_list(self):

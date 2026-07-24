@@ -3,6 +3,7 @@
 Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
+
 def get_subclasses(classes, level=0):
     """
     Return the list of all subclasses given class (or list of classes) has.
@@ -18,7 +19,7 @@ def get_subclasses(classes, level=0):
 
     if level < len(classes):
         classes += classes[level].__subclasses__()
-        return get_subclasses(classes, level+1)
+        return get_subclasses(classes, level + 1)
     else:
         return classes
 
@@ -34,9 +35,16 @@ def receiver_subclasses(signal, sender, dispatch_uid_prefix, **kwargs):
 
     Source: http://codeblogging.net/blogs/1/14
     """
+
     def _decorator(func):
         all_senders = get_subclasses(sender)
         for snd in all_senders:
-            signal.connect(func, sender=snd, dispatch_uid=dispatch_uid_prefix+'_'+snd.__name__, **kwargs)
+            signal.connect(
+                func,
+                sender=snd,
+                dispatch_uid=dispatch_uid_prefix + "_" + snd.__name__,
+                **kwargs,
+            )
         return func
+
     return _decorator

@@ -66,9 +66,9 @@ class PermissibleFilter(CheckViewConfigMixin, filters.BaseFilterBackend):
         if not perm_def and view.action == "list":
             perm_def = model_class.get_object_perm_def("retrieve")
 
-        assert (
-            perm_def
-        ), f"No object permission defined for {model_class} action '{view.action}'"
+        assert perm_def, (
+            f"No object permission defined for {model_class} action '{view.action}'"
+        )
 
         # Filter down the queryset based on the permissions
         return perm_def.filter_queryset(

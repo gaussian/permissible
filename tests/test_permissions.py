@@ -124,7 +124,6 @@ class DummyRequest:
 
 
 class TestPermissiblePerms(unittest.TestCase):
-
     def setUp(self):
         # Reset global permission to default True before each test
         DummyModel.global_permission = True
