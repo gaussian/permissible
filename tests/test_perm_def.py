@@ -102,7 +102,6 @@ class DummyRelatedObj(DummyObj):
 
 
 class TestPermDef(unittest.TestCase):
-
     def test_check_global_success(self):
         # PermDef with empty short_perm_codes and global_condition_checker always True
         perm_def = PermDef(

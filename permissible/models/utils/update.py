@@ -99,24 +99,16 @@ def guardian_bulk_update_permissions(
             # --- Fetch existing perms in one query for all objects+groups ---
 
             if has_content_object_fk:
-                existing_qs = (
-                    ObjPermModel.objects
-                    .filter(
-                        group__in=groups,
-                        content_object__in=[s.obj for s in model_specs],
-                    )
-                    .select_related("permission", "group")
-                )
+                existing_qs = ObjPermModel.objects.filter(
+                    group__in=groups,
+                    content_object__in=[s.obj for s in model_specs],
+                ).select_related("permission", "group")
             else:
-                existing_qs = (
-                    ObjPermModel.objects
-                    .filter(
-                        group__in=groups,
-                        content_type=ct,
-                        object_pk__in=obj_pks_as_str,
-                    )
-                    .select_related("permission", "group")
-                )
+                existing_qs = ObjPermModel.objects.filter(
+                    group__in=groups,
+                    content_type=ct,
+                    object_pk__in=obj_pks_as_str,
+                ).select_related("permission", "group")
 
             # Map: (group_id, object_key) -> set of current codenames
             current_by_key: dict[tuple[int, str | int], set[str]] = defaultdict(set)
@@ -229,4 +221,3 @@ def guardian_bulk_update_permissions(
 
             if to_delete_ids:
                 ObjPermModel.objects.filter(pk__in=to_delete_ids).delete()
-

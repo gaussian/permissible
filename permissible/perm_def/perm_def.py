@@ -73,17 +73,17 @@ class PermDef(BasePermDef):
         self.key_to_obj_in_context = None
         if self.obj_path_chain:
             if self.obj_path_chain[0] == "_context":
-                assert (
-                    len(self.obj_path_chain) == 2
-                ), f"If obj_path starts with '_context', it must have exactly one more key in the chain, got {self.obj_path_chain}"
-                assert (
-                    self.model_label
-                ), "If obj_path starts with '_context', model_label must be provided"
+                assert len(self.obj_path_chain) == 2, (
+                    f"If obj_path starts with '_context', it must have exactly one more key in the chain, got {self.obj_path_chain}"
+                )
+                assert self.model_label, (
+                    "If obj_path starts with '_context', model_label must be provided"
+                )
                 self.key_to_obj_in_context = self.obj_path_chain[1]
             else:
-                assert (
-                    not self.model_label
-                ), "Model label should not be provided if using obj_path but not using _context"
+                assert not self.model_label, (
+                    "Model label should not be provided if using obj_path but not using _context"
+                )
 
     def __repr__(self):
         """
@@ -122,9 +122,9 @@ class PermDef(BasePermDef):
         if not obj_class:
             return False
 
-        assert (
-            not self.obj_filter
-        ), "Object filter not supported for global checks, check your ACTION_POLICIES"
+        assert not self.obj_filter, (
+            "Object filter not supported for global checks, check your ACTION_POLICIES"
+        )
 
         # Actually check global permissions
         return self._check_perms(user=user, obj_class=obj_class)
@@ -143,9 +143,9 @@ class PermDef(BasePermDef):
 
         # Configuration check
         if not self.key_to_obj_in_context:
-            assert (
-                not self.model_label
-            ), f"Cannot use model label ({self.model_label}) for object permissions check if not using '_context' (in `obj_path`) to get the model PK"
+            assert not self.model_label, (
+                f"Cannot use model label ({self.model_label}) for object permissions check if not using '_context' (in `obj_path`) to get the model PK"
+            )
 
         # Check the "condition checker" (and fail if it does not pass)
         if not self.check_global_condition(user=user, context=context):

@@ -32,9 +32,9 @@ class PermissibleAdminMixin(object):
     """
 
     def _has_permission(self, action: str, request, obj: PermissibleMixin):
-        assert issubclass(
-            self.model, PermissibleMixin
-        ), "Must use `PermissibleMixin` on the model class"
+        assert issubclass(self.model, PermissibleMixin), (
+            "Must use `PermissibleMixin` on the model class"
+        )
 
         # Permission checks
         perm_check_kwargs = {

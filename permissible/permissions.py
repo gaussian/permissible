@@ -57,9 +57,9 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
         queryset = self._queryset(view)
         self._check_view_config(view, queryset)
 
-        assert getattr(
-            request, "user", None
-        ), "User object must be available in request for PermissiblePerms"
+        assert getattr(request, "user", None), (
+            "User object must be available in request for PermissiblePerms"
+        )
 
         model_class: Type[PermissibleMixin] = queryset.model
         perm_check_kwargs = {
@@ -136,9 +136,9 @@ class PermissiblePerms(CheckViewConfigMixin, permissions.DjangoModelPermissions)
         must pass for permission to be granted.
         """
 
-        assert getattr(
-            request, "user", None
-        ), "User object must be available in request for PermissiblePerms"
+        assert getattr(request, "user", None), (
+            "User object must be available in request for PermissiblePerms"
+        )
 
         queryset = self._queryset(view)
         model_cls = queryset.model

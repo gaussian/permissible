@@ -151,9 +151,9 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
             perm_def = cls.get_global_perms_def("retrieve")
 
         # Deny if no EXPLICIT permission check is defined
-        assert (
-            perm_def is not None
-        ), f"No global permission defined for {cls} action '{action}' in `policies.ACTION_POLICIES`"
+        assert perm_def is not None, (
+            f"No global permission defined for {cls} action '{action}' in `policies.ACTION_POLICIES`"
+        )
 
         # Check permissions on the class
         return perm_def.check_global(
@@ -204,9 +204,9 @@ class PermissibleMixin(PolicyLooupMixin, BasePermDefObj):
 
         # Get the PermDef for this action (object permissions)
         perm_def = self.get_object_perm_def(action)
-        assert (
-            perm_def is not None
-        ), f"No object permission for {self.__class__.__name__} (action '{action}') in `policies.ACTION_POLICIES`"
+        assert perm_def is not None, (
+            f"No object permission for {self.__class__.__name__} (action '{action}') in `policies.ACTION_POLICIES`"
+        )
 
         # Check permissions on the object
         return perm_def.check_obj(
