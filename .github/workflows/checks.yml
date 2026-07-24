@@ -27,19 +27,18 @@ jobs:
       - name: Ruff format check
         run: uv run --all-extras ruff format --check permissible/ tests/
 
+  # Single job (not a matrix) so it reports as one stable check named "test" —
+  # runs both supported Python versions as steps.
   test:
     name: test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.12', '3.13']
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-          python-version: ${{ matrix.python-version }}
-      - name: Run tests
-        run: uv run --all-extras pytest
+      - name: Test on Python 3.12
+        run: uv run --python 3.12 --all-extras pytest
+      - name: Test on Python 3.13
+        run: uv run --python 3.13 --all-extras pytest
