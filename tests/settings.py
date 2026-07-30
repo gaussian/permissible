@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "guardian",  # Required for object-level permissions
     "permissible",
+    "tests",  # Registered as an app so test models get their own app_label
 ]
 
 MIDDLEWARE = [
@@ -70,7 +71,6 @@ AUTH_PASSWORD_VALIDATORS = []
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
-USE_L10N = True
 USE_TZ = True
 
 # Static files

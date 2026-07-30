@@ -27,7 +27,7 @@ class TestFilterIntegrationModel(PermissibleMixin, models.Model):
     owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, null=True)
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
 
     def __str__(self):
         return self.name

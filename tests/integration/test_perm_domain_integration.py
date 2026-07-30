@@ -36,7 +36,7 @@ class TestIntegrationTeamModel(PermDomain):
     )
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
         permissions = (
             ("view_on_testintegrationteammodel", "Can view content in test team"),
         )
@@ -96,7 +96,7 @@ class TestTeamRole(PermDomainRole):
     role = build_role_field(ROLE_DEFINITIONS)
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
         unique_together = ("team", "role")
 
 
@@ -110,7 +110,7 @@ class TestTeamMember(PermDomainMember):
     )
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
         unique_together = ("team", "user")
 
 
@@ -127,7 +127,7 @@ class TestContent(PermissibleMixin, models.Model):
     )
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
 
     def __str__(self):
         return self.title
