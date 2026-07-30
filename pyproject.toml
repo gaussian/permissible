@@ -7,18 +7,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "permissible"
-version = "0.8.1"
+version = "0.9.0"
 description = "Extended, flexible and powerful object-level and rule-driven permissions for Django & Django REST framework"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-  "Django>=5.2.13,<6",
-  "djangorestframework>=3",
+  "Django>=6,<7",
+  "djangorestframework>=3.17",  # 3.17.0 is the first release with official Django 6.0 support
 ]
 
 [project.optional-dependencies]
 guardian = [
-  "django-guardian==3.3.1",     # can be upgraded
+  "django-guardian==3.3.2",     # 3.3.3 breaks get_objects_for_user (UNION column mismatch) on all Django versions
   "djangorestframework-guardian"
 ]
 

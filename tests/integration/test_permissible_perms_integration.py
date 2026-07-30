@@ -29,7 +29,7 @@ class TestPermIntegrationModel(PermissibleMixin, models.Model):
     owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, null=True)
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
 
     def __str__(self):
         return self.name
@@ -120,7 +120,7 @@ class PermissiblePermsIntegrationTest(TestCase):
         assign_short_perms(["view", "change"], cls.owner_user, cls.owned_obj)
 
         # Assign global permissions
-        assign_perm("permissible.add_testpermintegrationmodel", cls.staff_user)
+        assign_perm("tests.add_testpermintegrationmodel", cls.staff_user)
 
         # Set up request factory
         cls.factory = APIRequestFactory()

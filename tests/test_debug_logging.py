@@ -22,7 +22,7 @@ class TestLoggingModel(PermissibleMixin, models.Model):
     name = models.CharField(max_length=100)
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
 
     @classmethod
     def get_policies(cls):
