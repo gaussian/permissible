@@ -16,7 +16,7 @@ from __future__ import annotations
 from django.contrib import admin
 from django.contrib.admin.widgets import AutocompleteSelect
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django import forms
 
 User = get_user_model()
@@ -166,7 +166,17 @@ class BaseRoleBasedForm(forms.Form):
 
         Uses django-guardian's permission system to verify the user has the
         specific 'change_permission' permission on the given object.
+
+        NOTE: `obj` must be a `PermissibleMixin` model. In particular, the
+        user-centric admin view (`UserPermDomainAdminMixin`) passes the target
+        User here, so the project's User model must include `PermissibleMixin`.
         """
+        if not hasattr(obj, "get_permission_codename"):
+            raise ImproperlyConfigured(
+                f"{obj.__class__.__name__} must use PermissibleMixin to be used "
+                "in permissible admin views. If this is your User model, it "
+                "must include PermissibleMixin to use UserPermDomainAdminMixin."
+            )
         permission = obj.get_permission_codename("change_permission", True)
         return user.has_perm(permission, obj)
 

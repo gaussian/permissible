@@ -37,7 +37,7 @@ class BulkTestDomain(PermDomain):
     )
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
         abstract = False
 
     def __str__(self):
@@ -60,7 +60,7 @@ class BulkTestDomainRole(PermDomainRole):
     )
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
         abstract = False
 
 
@@ -74,7 +74,7 @@ class BulkTestDomainMember(PermDomainMember):
     )
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
         abstract = False
         unique_together = ("bulktestdomain", "user")
 

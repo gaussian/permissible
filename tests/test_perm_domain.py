@@ -35,7 +35,7 @@ class DummyDomain(PermDomain):
     )
 
     class Meta:
-        app_label = "permissible"  # Add explicit app_label
+        app_label = "tests"  # Add explicit app_label
         abstract = False
 
     def __str__(self):
@@ -62,9 +62,7 @@ class DummyDomainRole(PermDomainRole):
     )
 
     class Meta:
-        app_label = (
-            "permissible"  # Necessary since our abstract models have no app_label.
-        )
+        app_label = "tests"  # Necessary since our abstract models have no app_label.
         abstract = False
 
 
@@ -78,7 +76,7 @@ class DummyDomainMember(PermDomainMember):
     )
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
         abstract = False
         # Add a unique constraint for the domain and user
         unique_together = ("dummydomain", "user")  # Add this line

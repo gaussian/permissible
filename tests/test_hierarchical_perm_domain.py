@@ -30,7 +30,7 @@ class DummyHierarchicalDomain(HierarchicalPermDomain):
         return self.name
 
     class Meta:
-        app_label = "permissible"  # Ensure proper app_label for testing
+        app_label = "tests"  # Ensure proper app_label for testing
 
 
 # Define a dummy domain role model that links DummyHierarchicalDomain to roles
@@ -54,7 +54,7 @@ class DummyHierarchicalDomainRole(PermDomainRole):
     )
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
         # Group and domain together must be unique
         unique_together = ("group", "domain")
 
@@ -71,7 +71,7 @@ class DummyHierarchicalDomainMember(PermDomainMember):
     )
 
     class Meta:
-        app_label = "permissible"
+        app_label = "tests"
 
 
 class HierarchicalPermDomainTests(TestCase):

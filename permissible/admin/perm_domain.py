@@ -23,7 +23,7 @@ from django.http import Http404
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 
 from .forms import PermDomainForm, BaseRoleBasedForm, UserPermDomainForm
 
@@ -325,4 +325,4 @@ class UserPermDomainAdminMixin(BasePermissibleViewMixin):
             )
         if not links:
             return "None"
-        return format_html(" | ".join(links))
+        return format_html_join(" | ", "{}", ((link,) for link in links))
