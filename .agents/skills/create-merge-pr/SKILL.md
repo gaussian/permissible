@@ -22,10 +22,17 @@ by where you are:
 2. **Do not bump the version** — bumps happen only on releases (Pathway B).
 
 3. Merge with a merge commit — **do not squash** (it loses the individual
-   commits):
+   commits), and **do NOT pass `--delete-branch`** (the branch is deleted
+   separately, in step 4):
 
    ```
-   gh pr merge --merge --delete-branch
+   gh pr merge --merge
+   ```
+
+4. Delete the branch, directly after the merge:
+
+   ```
+   git push origin --delete <branch>
    ```
 
 ## Pathway B (release pathway) — `develop` → `main`
@@ -61,6 +68,8 @@ A `develop` → `main` PR is a release — merging it triggers publishing to PyP
    ```
    gh pr merge --merge
    ```
+
+4. **Do not delete the branch.**
 
 ## Checks (both pathways)
 
