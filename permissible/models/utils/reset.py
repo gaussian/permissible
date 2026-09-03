@@ -22,6 +22,13 @@ def reset_permissions(perm_domain_roles: list[PermDomainRole], clear_existing=Fa
     # Collect all specs for bulk update
     specs = []
 
+    # `get_permission_targets()` costs one query per level of the domain
+    # object's subtree (see `HierarchicalPermDomain`), and EVERY role of the
+    # same domain object walks the SAME subtree. Walk it once per domain object
+    # instead of once per role. Nothing here mutates the tree, so the targets
+    # cannot change within one call.
+    targets_by_domain = {}
+
     for perm_domain_role in perm_domain_roles:
         # Find the domain object associated with thie object (PermDomain)
         domain_field = perm_domain_role.get_domain_field()
@@ -43,7 +50,15 @@ def reset_permissions(perm_domain_roles: list[PermDomainRole], clear_existing=Fa
         # the domain object itself; however, in certain cases (eg in the subclass
         # of `PermDomain` called `HierarchicalPermDomain`) this may be different (eg
         # it may be chidren objects)
-        for obj in domain_obj.get_permission_targets():
+        # Unsaved domain objects are not cached: they have no pk to key on.
+        cache_key = (type(domain_obj), domain_obj.pk) if domain_obj.pk else None
+        targets = targets_by_domain.get(cache_key) if cache_key else None
+        if targets is None:
+            targets = list(domain_obj.get_permission_targets())
+            if cache_key:
+                targets_by_domain[cache_key] = targets
+
+        for obj in targets:
             specs.append(
                 ObjectGroupPermSpec(
                     obj=obj,
