@@ -7,16 +7,32 @@ depth-capped, and both it and `reset_permissions()` do markedly less work.
 
 ### Breaking
 
-- `get_ancestor_ids_from_id()` returns an **ordered list** (nearest ancestor
-  first) instead of an unordered `set`, and takes a new optional `max_levels`.
+Only one item here can break a working system. The rest are listed for
+completeness, and their blast radius is stated.
+
+- **`save()` now rejects writes it used to accept**: a parent that would create
+  a cycle, or that would push the tree past `MAX_HIERARCHY_DEPTH`. **This is the
+  one to check before upgrading.** Any existing tree deeper than the cap - and
+  any fixture or test that builds one - starts raising `ValidationError`. Find
+  them first, or raise `MAX_HIERARCHY_DEPTH` on your subclass:
+
+  ```python
+  # any object whose ancestor chain is already at or past the cap
+  [obj for obj in Model.objects.all() if len(obj.get_ancestor_ids()) >= Model.MAX_HIERARCHY_DEPTH - 1]
+  ```
+
+- `get_ancestor_ids_from_id()` returns an **ordered list** (nearest first)
+  instead of an unordered `set`, and takes a new optional `max_levels`. *No
+  known callers:* inside this package it is only used by `save()`, and a survey
+  of the consuming repositories found none outside it.
 - `save()` raises `django.core.exceptions.ValidationError` keyed on `"parent"`
-  where it used to raise `ValueError` for self-parenting.
-- `save()` now also rejects a parent that would create a cycle, or that would
-  push the tree past `MAX_HIERARCHY_DEPTH`. Writes previously accepted can now
-  be rejected.
-- Both `save()` and `clean()` check only when `parent` **actually changed**. An
-  object already self-parented in the database therefore no longer raises on
-  every unrelated save; it used to raise `ValueError` every time.
+  where it used to raise `ValueError` for self-parenting. *No known catchers,
+  and no test asserts the old type or message.*
+
+Not breaking, listed here because it is a visible change in behaviour: an object
+**already self-parented in the database** used to raise `ValueError` on every
+save, including saves that had nothing to do with `parent`. It now saves. This
+only removes an exception, so nothing that worked before stops working.
 
 ### Fixed
 
