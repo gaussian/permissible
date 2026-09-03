@@ -122,6 +122,12 @@ def _iter_descendant_levels(model, root_id, max_levels=None, ids_only=False):
     with the whole subtree, so putting it in the query would grow the bind
     parameter list with it and eventually break the backend's limit. The query
     carries only the current level, which is unavoidable.
+
+    IMPORTANT: like the ancestor walks, this reads through
+    `model._default_manager`. A default manager that hides rows (soft delete,
+    for example) therefore hides a hidden node's ENTIRE SUBTREE, not just the
+    node: nothing below it is in the next level's frontier. This matches what
+    the previous recursive `self.children.all()` did.
     """
     manager = model._default_manager
     seen = {root_id}
@@ -181,6 +187,10 @@ class HierarchicalPermDomain(PermDomain):
         Deliberately uncapped: dropping a descendant here would silently
         withhold its permissions. The seen set in `_iter_descendant_levels` is
         what makes this terminate, cycle or no cycle.
+
+        A node hidden by the default manager takes its whole subtree with it,
+        so those objects get no permissions from this domain's roles. See
+        `_iter_descendant_levels`.
         """
         yield self
 

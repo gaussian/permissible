@@ -595,6 +595,28 @@ class SoftDeleteDefaultManagerTests(TestCase):
             [parent.pk],
         )
 
+    def test_hidden_node_hides_its_whole_subtree(self):
+        """
+        The descendant walk reads through the same manager, so a hidden node
+        takes everything below it out of the permission targets - not just
+        itself. `origin/develop`'s recursive `self.children.all()` did the same.
+        """
+        root = DummySoftDeleteDomain.objects.create(name="Root")
+        mid = DummySoftDeleteDomain.objects.create(name="Mid", parent=root)
+        leaf = DummySoftDeleteDomain.objects.create(name="Leaf", parent=mid)
+
+        self.assertEqual(
+            [t.name for t in root.get_permission_targets()], ["Root", "Mid", "Leaf"]
+        )
+        self.assertEqual(root.get_descendant_depth(), 2)
+
+        DummySoftDeleteDomain.all_objects.filter(pk=mid.pk).update(is_deleted=True)
+
+        # `leaf` is untouched, but it is no longer reachable from `root`.
+        self.assertTrue(DummySoftDeleteDomain.all_objects.filter(pk=leaf.pk).exists())
+        self.assertEqual([t.name for t in root.get_permission_targets()], ["Root"])
+        self.assertEqual(root.get_descendant_depth(), 0)
+
 
 class ResetPermissionsTargetReuseTests(TestCase):
     """

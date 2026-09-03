@@ -11,7 +11,10 @@ depth-capped.
   (nearest ancestor first) instead of an unordered `set`. It also takes a new
   optional `max_levels` argument.
 - `save()` raises `django.core.exceptions.ValidationError` (keyed on `"parent"`)
-  where it used to raise `ValueError` for self-parenting.
+  where it used to raise `ValueError` for self-parenting. It raises only when
+  `parent` actually changed, so an object ALREADY self-parented in the database
+  no longer raises on every unrelated save - it used to raise `ValueError` every
+  time.
 - `save()` now also raises `ValidationError` for a parent that would create a
   cycle, or that would push the tree past `MAX_HIERARCHY_DEPTH`. Writes that
   were previously accepted can now be rejected.
@@ -62,7 +65,8 @@ depth-capped.
   `get_descendant_depth()`, so a subtree cannot be re-parented under a deep node
   to slip past the cap.
 - Module-level `walk_ancestor_ids()` / `awalk_ancestor_ids()` helpers, for
-  callers that have an id rather than an instance.
+  callers that have an id rather than an instance. Both are exported from
+  `permissible.models`.
 
 ### Known limits
 
@@ -82,6 +86,11 @@ depth-capped.
   `.save()` on a nested object therefore costs the same 2 queries it always
   did, and `save(update_fields=[...])` without `"parent"` now costs 1 (it skips
   the previous-parent lookup as well, which it used to pay for).
+- A node hidden by the default manager takes its **whole subtree** out of
+  `get_permission_targets()` and `get_descendant_depth()`, not just itself:
+  nothing below it reaches the next level's frontier, so those objects get no
+  permissions from this domain's roles. This is not new - the previous recursive
+  `self.children.all()` behaved identically - but it was never written down.
 - Every read of the tree goes through `_default_manager` rather than `objects`,
   including `save()`'s lookup of the stored `parent_id` and its fetch of the
   ancestors to reset. For a model that has not overridden its manager these are
