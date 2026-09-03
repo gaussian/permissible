@@ -456,6 +456,22 @@ class HierarchyValidationTests(TestCase):
         with self.assertRaises(ValidationError):
             too_deep.clean()
 
+    def test_full_save_without_parent_change_runs_no_hierarchy_queries(self):
+        """
+        A plain .save() that leaves `parent` alone must not pay for the
+        validation walks: only a changed parent can break the rules.
+
+        Two queries: the lookup of the stored parent_id, and the UPDATE.
+        """
+        nodes = make_chain(5)
+        leaf = nodes[-1]
+        leaf.name = "Renamed"
+
+        with CaptureQueriesContext(connection) as captured:
+            leaf.save()
+
+        self.assertEqual(len(captured.captured_queries), 2)
+
     def test_partial_save_runs_no_hierarchy_queries(self):
         """A save that cannot change `parent` must not pay for the walks."""
         nodes = make_chain(3)

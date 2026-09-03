@@ -27,7 +27,8 @@ depth-capped.
   `get_ancestor_ids_from_id()`. It now terminates.
 - `get_permission_targets()` recursed until `RecursionError` on a cycle. It is
   now iterative with a visited set, and yields each node exactly once. It also
-  fetches one level per query instead of one node per query (it was N+1).
+  fetches one level per query instead of one node per query (it was N+1), which
+  makes `reset_domain_roles()` cheaper on any tree deeper than one level.
 
 ### Added
 
@@ -52,9 +53,10 @@ depth-capped.
 
 ### Changed
 
-- A save that cannot change `parent` — `save(update_fields=[...])` without
-  `"parent"` — now runs no hierarchy queries at all, neither the validation
-  walks nor the previous-parent lookup.
+- The hierarchy checks run only when `parent` actually changed. A plain
+  `.save()` on a nested object therefore costs the same 2 queries it always
+  did, and `save(update_fields=[...])` without `"parent"` now costs 1 (it skips
+  the previous-parent lookup as well, which it used to pay for).
 - The walks read through `_default_manager` rather than `objects`. For a model
   whose default manager hides rows (a soft-delete manager, for example), a
   hidden ancestor is invisible and therefore **ends the chain**: its id is still

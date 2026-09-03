@@ -16,13 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def _parent_id_queryset(model, current_id):
-    """
-    The one-column queryset both ancestor walks step through.
-
-    Uses `_default_manager` (not `objects`), so a model with a soft-delete
-    default manager hides soft-deleted rows from the walk. See
-    `walk_ancestor_ids` for what that means for the result.
-    """
+    """The one-column queryset both ancestor walks step through."""
     return model._default_manager.filter(pk=current_id).values_list(
         "parent_id", flat=True
     )
@@ -32,7 +26,7 @@ def _accept_ancestor(model, current_id, ancestor_ids, seen, start_id, max_levels
     """
     Decide whether the walk takes `current_id`, and record it if so.
 
-    Shared by the sync and async walks so the stop conditions and their log
+    Shared by the sync and async walks, so the stop conditions and their log
     lines exist once.
 
     Returns:
@@ -60,40 +54,28 @@ def _accept_ancestor(model, current_id, ancestor_ids, seen, start_id, max_levels
     return True
 
 
-def _resolve_max_levels(model, max_levels):
-    """
-    Return the level cap to use, defaulting to one less than the model's
-    `MAX_HIERARCHY_DEPTH` (the chain above a node, excluding the node itself).
-    """
-    if max_levels is None:
-        return model.MAX_HIERARCHY_DEPTH - 1
-    return max_levels
-
-
 def walk_ancestor_ids(model, start_id, exclude_id=None, max_levels=None) -> list:
     """
-    Walk the parent chain from `start_id` upwards and return the ids in order,
-    nearest first.
+    Walk the parent chain up from `start_id`, returning ids NEAREST FIRST.
 
-    The walk costs one small query per level and instantiates no model rows.
-    It stops:
-    - at a `None` parent (the root);
-    - at any repeated id (a cycle) - logged with `logger.error`;
-    - at `max_levels` ids (default `model.MAX_HIERARCHY_DEPTH - 1`) - logged
-      with `logger.warning`.
-
-    Neither stop condition raises. A malformed chain neither hangs nor recurses.
+    One small query per level; no model rows are built. The walk stops at a
+    `None` parent, at any repeated id (a cycle - `logger.error`), and at
+    `max_levels` ids (default `MAX_HIERARCHY_DEPTH - 1` - `logger.warning`).
+    Neither stop condition raises, so a malformed chain neither hangs nor
+    recurses.
 
     Pass `exclude_id` (normally the walking object's own pk) to seed the seen
     set, so a chain that loops back to that object stops on the first repeat
-    instead of after a full lap.
+    rather than after a full lap.
 
-    IMPORTANT: the walk reads through `model._default_manager`. For a model
-    whose default manager hides rows (a soft-delete manager, for example), a
-    hidden ancestor is invisible and therefore ENDS the chain: nothing above it
-    is returned.
+    IMPORTANT: the walk reads through `model._default_manager`. A default
+    manager that hides rows (soft delete, for example) therefore ENDS the chain
+    at a hidden ancestor: that ancestor's id is still returned, because its
+    child names it, but nothing above it is.
     """
-    max_levels = _resolve_max_levels(model, max_levels)
+    if max_levels is None:
+        max_levels = model.MAX_HIERARCHY_DEPTH - 1
+
     ancestor_ids = []
     seen = set() if exclude_id is None else {exclude_id}
     current_id = start_id
@@ -109,11 +91,10 @@ def walk_ancestor_ids(model, start_id, exclude_id=None, max_levels=None) -> list
 
 
 async def awalk_ancestor_ids(model, start_id, exclude_id=None, max_levels=None) -> list:
-    """
-    Async version of `walk_ancestor_ids`. Same order, same stop conditions,
-    same log lines.
-    """
-    max_levels = _resolve_max_levels(model, max_levels)
+    """Async `walk_ancestor_ids`: same order, stop conditions and log lines."""
+    if max_levels is None:
+        max_levels = model.MAX_HIERARCHY_DEPTH - 1
+
     ancestor_ids = []
     seen = set() if exclude_id is None else {exclude_id}
     current_id = start_id
@@ -126,6 +107,31 @@ async def awalk_ancestor_ids(model, start_id, exclude_id=None, max_levels=None) 
         current_id = await _parent_id_queryset(model, current_id).afirst()
 
     return ancestor_ids
+
+
+def _iter_descendant_levels(model, root_id, max_levels=None, ids_only=False):
+    """
+    Yield the descendants of `root_id` one level at a time, nearest level first.
+
+    One query per level rather than one per node. Every node already seen is
+    excluded from the next query, so each node is yielded at most once and a
+    cycle cannot spin - `max_levels` is a cost bound, not the reason the walk
+    terminates. Pass `ids_only` to read the pk column instead of whole rows.
+    """
+    manager = model._default_manager
+    seen = {root_id}
+    frontier = [root_id]
+    levels_done = 0
+
+    while max_levels is None or levels_done < max_levels:
+        queryset = manager.filter(parent_id__in=frontier).exclude(pk__in=seen)
+        level = list(queryset.values_list("pk", flat=True) if ids_only else queryset)
+        if not level:
+            return
+        frontier = level if ids_only else [obj.pk for obj in level]
+        seen.update(frontier)
+        yield level
+        levels_done += 1
 
 
 class HierarchicalPermDomain(PermDomain):
@@ -160,93 +166,67 @@ class HierarchicalPermDomain(PermDomain):
         In this case, as opposed to the base class, we need to include
         all DESCENDANTS in the set of permission targets.
 
-        The walk is iterative and breadth-first, one query per level rather
-        than one query per node. A visited set keeps each node to a single
-        yield, so a cycle in the tree yields each node once instead of raising
-        `RecursionError`.
+        Deliberately uncapped: dropping a descendant here would silently
+        withhold its permissions. The seen set in `_iter_descendant_levels` is
+        what makes this terminate, cycle or no cycle.
         """
-        # First yield this object itself
         yield self
 
         if not self.pk:
             return
 
-        manager = type(self)._default_manager
-        seen = {self.pk}
-        frontier = [self.pk]
-
-        # Then yield all descendants, one level (and one query) at a time
-        while frontier:
-            children = list(manager.filter(parent_id__in=frontier).exclude(pk__in=seen))
-            if not children:
-                break
-            child_ids = [child.pk for child in children]
-            seen.update(child_ids)
-            yield from children
-            frontier = child_ids
+        for level in _iter_descendant_levels(type(self), self.pk):
+            yield from level
 
     def get_ancestor_ids(self, max_levels=None) -> list:
         """
-        Return the ids of this object's ancestors, NEAREST FIRST (parent,
-        grandparent, ...), excluding this object itself.
+        Return this object's ancestor ids NEAREST FIRST (parent, grandparent,
+        ...), excluding this object itself.
 
-        See `walk_ancestor_ids` for the stop conditions and for the effect of a
-        filtering default manager.
+        See `walk_ancestor_ids` for the stop conditions and for what a
+        filtering default manager does to the result.
         """
         return walk_ancestor_ids(
             type(self), self.parent_id, exclude_id=self.pk, max_levels=max_levels
         )
 
     async def aget_ancestor_ids(self, max_levels=None) -> list:
-        """
-        Async version of `get_ancestor_ids`.
-        """
+        """Async `get_ancestor_ids`."""
         return await awalk_ancestor_ids(
             type(self), self.parent_id, exclude_id=self.pk, max_levels=max_levels
         )
 
     def get_descendant_depth(self) -> int:
         """
-        Return the number of levels below this object, 0 for a leaf.
-
-        Breadth-first by id, one query per level, bounded by
-        `MAX_HIERARCHY_DEPTH` and by an already-seen set, so a cycle cannot
-        spin.
+        Return the number of levels below this object; 0 for a leaf.
+        One query per level, bounded by `MAX_HIERARCHY_DEPTH`.
         """
         if not self.pk:
             return 0
 
-        manager = type(self)._default_manager
-        height = 0
-        frontier = [self.pk]
-        seen = {self.pk}
-
-        while frontier and height < self.MAX_HIERARCHY_DEPTH:
-            child_ids = list(
-                manager.filter(parent_id__in=frontier)
-                .exclude(pk__in=seen)
-                .values_list("pk", flat=True)
+        return sum(
+            1
+            for _ in _iter_descendant_levels(
+                type(self),
+                self.pk,
+                max_levels=self.MAX_HIERARCHY_DEPTH,
+                ids_only=True,
             )
-            if not child_ids:
-                break
-            seen.update(child_ids)
-            frontier = child_ids
-            height += 1
-
-        return height
+        )
 
     def validate_hierarchy(self) -> None:
         """
-        Check the PENDING `parent_id` against the hierarchy rules.
-
-        Raises `ValidationError` keyed on "parent" when the new parent would:
-        - make this object its own parent;
-        - place this object inside its own ancestor chain (a cycle);
-        - push the total chain past `MAX_HIERARCHY_DEPTH`.
+        Check the PENDING `parent_id` against the hierarchy rules, and raise
+        `ValidationError` keyed on "parent" when it would make this object its
+        own parent, put it inside its own ancestor chain, or push the tree past
+        `MAX_HIERARCHY_DEPTH`.
 
         The depth check counts the ancestors above the new parent, plus this
         object, plus `get_descendant_depth()`, so an existing subtree cannot be
         re-parented under a deep node to slip past the cap.
+
+        Callers should only run this when `parent` actually changed - see
+        `save()`. It costs up to `2 * MAX_HIERARCHY_DEPTH` queries.
         """
         if self.parent_id is None:
             return
@@ -282,13 +262,11 @@ class HierarchicalPermDomain(PermDomain):
     @classmethod
     def get_ancestor_ids_from_id(cls, parent_id, max_levels=None) -> list:
         """
-        Given a parent_id (or None), return the ids of that ancestor chain
-        (parent, parent's parent, etc), NEAREST FIRST, walking up the hierarchy
-        without instantiating full objects.
+        Given a parent_id (or None), return that ancestor chain (parent,
+        parent's parent, etc) NEAREST FIRST, without instantiating full objects.
 
-        Returns an ordered list. It used to return an unordered set, and it used
-        to loop forever on a cycle; see `walk_ancestor_ids` for the stop
-        conditions.
+        Returns an ordered list; it used to return an unordered set, and it used
+        to loop forever on a cycle. See `walk_ancestor_ids`.
         """
         if parent_id is None:
             return []
@@ -297,32 +275,30 @@ class HierarchicalPermDomain(PermDomain):
     def save(self, *args, **kwargs):
         """
         Override save() to check if the parent field has changed. If so,
-        reset permissions for all ancestors, since their permission set needs
-        to be updated.
+        validate the hierarchy rules and reset permissions for all ancestors,
+        since their permission set needs to be updated.
 
         We must reset permissions both ancestors using the OLD value of
         `parent_id` as well as the NEW value of `parent_id`.
 
-        The hierarchy rules (`validate_hierarchy`) are enforced here as well as
-        in `clean()`, because most writes to `parent` never pass through a
-        ModelForm.
+        The rules are enforced here as well as in `clean()`, because most writes
+        to `parent` never pass through a ModelForm. A save that leaves `parent`
+        alone does no hierarchy work at all.
         """
 
         model_class = type(self)
 
         # `parent` cannot change when it is absent from `update_fields`, so a
-        # partial save such as save(update_fields=["name"]) pays for no
-        # hierarchy queries at all.
+        # partial save such as save(update_fields=["name"]) can skip everything
+        # below, including the query for the stored parent.
         update_fields = kwargs.get("update_fields")
         if update_fields is not None and not (
             "parent" in update_fields or "parent_id" in update_fields
         ):
             return super().save(*args, **kwargs)
 
-        # Enforce the cycle and depth rules (this also rejects self-parenting)
-        self.validate_hierarchy()
-
-        # Check if the parent has changed
+        # Check if the parent has changed (1 query, which the ancestor reset
+        # below needs anyway)
         old_parent_id = None
         if self.pk:
             old_parent_id = (
@@ -330,6 +306,13 @@ class HierarchicalPermDomain(PermDomain):
                 .values_list("parent_id", flat=True)
                 .first()
             )
+        parent_changed = old_parent_id != self.parent_id
+
+        # Only a CHANGED parent can break the rules, and only then is it worth
+        # paying for the ancestor and descendant walks. This also keeps an
+        # unrelated save from failing on a tree that was already non-compliant.
+        if parent_changed:
+            self.validate_hierarchy()
 
         # Save the object as usual
         result = super().save(*args, **kwargs)
@@ -337,15 +320,15 @@ class HierarchicalPermDomain(PermDomain):
         # When the parent has changed, reset permissions for ALL ANCESTORS
         # of the PREVIOUS parent as well as the CURRENT parent.
         # (because the permission set of the parent may have changed)
-        if old_parent_id != self.parent_id:
+        if parent_changed:
             # Get the ancestor IDs for both the old and new ancestor chains
-            old_ancestor_ids = set(model_class.get_ancestor_ids_from_id(old_parent_id))
-            new_ancestor_ids = set(model_class.get_ancestor_ids_from_id(self.parent_id))
+            old_ancestor_ids = model_class.get_ancestor_ids_from_id(old_parent_id)
+            new_ancestor_ids = model_class.get_ancestor_ids_from_id(self.parent_id)
 
             # Get all ancestors that are in the union of the old and new ancestor chains
             # (because both old and new ancestor chains will have new CHILDREN)
             all_ancestors = model_class.objects.filter(
-                pk__in=old_ancestor_ids.union(new_ancestor_ids)
+                pk__in=set(old_ancestor_ids) | set(new_ancestor_ids)
             )
 
             # Update all affected ancestors
