@@ -35,7 +35,10 @@ depth-capped.
 - `get_permission_targets()` recursed until `RecursionError` on a cycle. It is
   now iterative with a visited set, and yields each node exactly once. It also
   fetches one level per query instead of one node per query (it was N+1), which
-  makes `reset_domain_roles()` cheaper on any tree deeper than one level.
+  makes `reset_domain_roles()` cheaper on any tree deeper than one level. Note
+  that it now yields **breadth-first** (self, then every child, then every
+  grandchild) where it used to yield depth-first. Nothing in this package
+  depends on the order.
 
 ### Added
 
@@ -50,7 +53,10 @@ depth-capped.
   a leaf. Breadth-first, one query per level, bounded by `MAX_HIERARCHY_DEPTH`
   and by a seen set.
 - `validate_hierarchy()` checks the pending `parent_id` against the
-  self-parent, cycle and depth rules. It is wired into `clean()` and `save()`,
+  self-parent, cycle and depth rules. Both `clean()` and `save()` run it only
+  when `parent` actually changed, so an ordinary edit - a rename through a
+  ModelForm, say - is never blocked by a tree that was already over the cap.
+  It is wired into `clean()` and `save()`,
   because most writes to `parent` never pass through a ModelForm. The depth
   check counts ancestors above the new parent, plus the object, plus
   `get_descendant_depth()`, so a subtree cannot be re-parented under a deep node
@@ -70,7 +76,10 @@ depth-capped.
   `.save()` on a nested object therefore costs the same 2 queries it always
   did, and `save(update_fields=[...])` without `"parent"` now costs 1 (it skips
   the previous-parent lookup as well, which it used to pay for).
-- The walks read through `_default_manager` rather than `objects`. For a model
+- Every read of the tree goes through `_default_manager` rather than `objects`,
+  including `save()`'s lookup of the stored `parent_id` and its fetch of the
+  ancestors to reset. For a model that has not overridden its manager these are
+  the same thing. For a model
   whose default manager hides rows (a soft-delete manager, for example), a
   hidden ancestor is invisible and therefore **ends the chain**: its id is still
   returned, because the child names it, but nothing above it is.

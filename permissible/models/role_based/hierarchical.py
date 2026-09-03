@@ -255,9 +255,28 @@ class HierarchicalPermDomain(PermDomain):
                 }
             )
 
+    def _get_stored_parent_id(self):
+        """
+        The `parent_id` currently in the database, or None when this object has
+        no row yet. Read through `_default_manager`, like the walks.
+        """
+        if not self.pk:
+            return None
+        return (
+            type(self)
+            ._default_manager.filter(pk=self.pk)
+            .values_list("parent_id", flat=True)
+            .first()
+        )
+
     def clean(self):
         super().clean()
-        self.validate_hierarchy()
+
+        # Same gate as save(): only a CHANGED parent can break the rules.
+        # Re-checking an unchanged one would block an ordinary form edit - a
+        # rename, say - on a tree that was already over the cap.
+        if self._get_stored_parent_id() != self.parent_id:
+            self.validate_hierarchy()
 
     @classmethod
     def get_ancestor_ids_from_id(cls, parent_id, max_levels=None) -> list:
@@ -268,8 +287,6 @@ class HierarchicalPermDomain(PermDomain):
         Returns an ordered list; it used to return an unordered set, and it used
         to loop forever on a cycle. See `walk_ancestor_ids`.
         """
-        if parent_id is None:
-            return []
         return walk_ancestor_ids(cls, parent_id, max_levels=max_levels)
 
     def save(self, *args, **kwargs):
@@ -292,20 +309,17 @@ class HierarchicalPermDomain(PermDomain):
         # partial save such as save(update_fields=["name"]) can skip everything
         # below, including the query for the stored parent.
         update_fields = kwargs.get("update_fields")
-        if update_fields is not None and not (
-            "parent" in update_fields or "parent_id" in update_fields
-        ):
-            return super().save(*args, **kwargs)
+        if update_fields is not None:
+            # Django accepts ANY iterable here and materialises it itself, so
+            # test a copy: a generator consumed below would reach super().save()
+            # empty.
+            update_fields = kwargs["update_fields"] = frozenset(update_fields)
+            if not {"parent", "parent_id"} & update_fields:
+                return super().save(*args, **kwargs)
 
         # Check if the parent has changed (1 query, which the ancestor reset
         # below needs anyway)
-        old_parent_id = None
-        if self.pk:
-            old_parent_id = (
-                model_class.objects.filter(pk=self.pk)
-                .values_list("parent_id", flat=True)
-                .first()
-            )
+        old_parent_id = self._get_stored_parent_id()
         parent_changed = old_parent_id != self.parent_id
 
         # Only a CHANGED parent can break the rules, and only then is it worth
@@ -327,7 +341,7 @@ class HierarchicalPermDomain(PermDomain):
 
             # Get all ancestors that are in the union of the old and new ancestor chains
             # (because both old and new ancestor chains will have new CHILDREN)
-            all_ancestors = model_class.objects.filter(
+            all_ancestors = model_class._default_manager.filter(
                 pk__in=set(old_ancestor_ids) | set(new_ancestor_ids)
             )
 

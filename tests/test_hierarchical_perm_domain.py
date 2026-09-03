@@ -449,6 +449,46 @@ class HierarchyValidationTests(TestCase):
             root.save()
         self.assertIn("parent", ctx.exception.message_dict)
 
+    def test_clean_skips_the_check_when_parent_is_unchanged(self):
+        """
+        A rename through a ModelForm must not be blocked by a tree that was
+        already over the cap. Only a CHANGED parent is checked.
+        """
+        depth = DummyHierarchicalDomain.MAX_HIERARCHY_DEPTH
+        nodes = make_chain(depth)
+
+        # Force the chain one level past the cap, behind save()'s back.
+        over_deep = DummyHierarchicalDomain.objects.create(name="OverDeep")
+        DummyHierarchicalDomain.objects.filter(pk=over_deep.pk).update(
+            parent_id=nodes[-1].pk
+        )
+        over_deep.refresh_from_db()
+
+        # Renaming it does not touch `parent`, so clean() lets it through...
+        over_deep.name = "Renamed"
+        over_deep.clean()
+        over_deep.save()
+
+        # ...but moving it still gets checked: the leaf of another full-depth
+        # chain would put it at level 11 again, and that IS a change.
+        other_chain = make_chain(depth)
+        over_deep.parent = other_chain[-1]
+        with self.assertRaises(ValidationError):
+            over_deep.clean()
+
+    def test_update_fields_generator_is_not_consumed(self):
+        """
+        Django accepts any iterable for update_fields. Testing it for "parent"
+        must not leave super().save() an exhausted generator.
+        """
+        nodes = make_chain(2)
+        leaf = nodes[-1]
+        leaf.name = "Renamed"
+        leaf.save(update_fields=(f for f in ["name"]))
+
+        leaf.refresh_from_db()
+        self.assertEqual(leaf.name, "Renamed")
+
     def test_clean_enforces_the_same_rules(self):
         depth = DummyHierarchicalDomain.MAX_HIERARCHY_DEPTH
         nodes = make_chain(depth)
