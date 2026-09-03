@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
 
 `HierarchicalPermDomain` tree traversal is now ordered, cycle-safe and
 depth-capped, and both it and `reset_permissions()` do markedly less work.
