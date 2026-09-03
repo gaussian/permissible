@@ -527,5 +527,30 @@ class SoftDeleteDefaultManagerTests(TestCase):
         )
 
 
+class ResetPermissionsTargetReuseTests(TestCase):
+    """
+    `reset_permissions()` used to walk a domain object's permission targets
+    once PER ROLE. Every role of one domain object sees the same subtree, so
+    the walk happens once per domain object instead.
+    """
+
+    def test_permission_targets_walked_once_per_domain_object(self):
+        root = DummyHierarchicalDomain.objects.create(name="Root")
+        DummyHierarchicalDomain.objects.create(name="Child", parent=root)
+
+        role_count = len(DummyHierarchicalDomainRole.ROLE_DEFINITIONS)
+        self.assertGreater(role_count, 1, "the test needs more than one role")
+
+        real = DummyHierarchicalDomain.get_permission_targets
+        with patch.object(
+            DummyHierarchicalDomain, "get_permission_targets", autospec=True
+        ) as spy:
+            spy.side_effect = lambda self: real(self)
+            root.reset_domain_roles()
+
+        # Once for `root` - not once per role.
+        self.assertEqual(spy.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

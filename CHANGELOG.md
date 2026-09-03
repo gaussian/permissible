@@ -18,6 +18,13 @@ depth-capped.
 
 ### Fixed
 
+- `save(update_fields=[...])` that excluded `"parent"` but left `.parent` dirty
+  in memory used to reset the ancestors of a re-parenting **that was never
+  written** (Django does not write a column absent from `update_fields`). It
+  reset the wrong chain for a change that did not happen. It now resets nothing,
+  which is what the persisted state calls for. This is the only case in which
+  `reset_domain_roles()` runs a different number of times than before.
+
 - `get_ancestor_ids_from_id()` looped forever on a cycle in the `parent` chain,
   issuing one query per iteration. Nothing in the database prevents such a
   cycle: it is reachable through `.update(parent_id=...)`, a data migration, a
@@ -53,6 +60,12 @@ depth-capped.
 
 ### Changed
 
+- `reset_permissions()` walks each domain object's `get_permission_targets()`
+  **once per domain object** rather than once per role. Every role of one domain
+  object sees the same subtree, and nothing in the call mutates the tree. On a
+  6-node tree this takes `reset_domain_roles()` on the root from 29 queries to
+  17, and creating a child at depth 6 from 140 to 103. A flat `PermDomain` is
+  unaffected (16 queries either way), because its target list is just itself.
 - The hierarchy checks run only when `parent` actually changed. A plain
   `.save()` on a nested object therefore costs the same 2 queries it always
   did, and `save(update_fields=[...])` without `"parent"` now costs 1 (it skips
