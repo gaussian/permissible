@@ -64,6 +64,12 @@ depth-capped.
 - Module-level `walk_ancestor_ids()` / `awalk_ancestor_ids()` helpers, for
   callers that have an id rather than an instance.
 
+### Known limits
+
+- The rules are enforced at write time, not by a database constraint, so two
+  concurrent re-parents can still race into a cycle. That is why every read of
+  the tree is cycle-safe rather than trusting the data.
+
 ### Changed
 
 - `reset_permissions()` walks each domain object's `get_permission_targets()`

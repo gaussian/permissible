@@ -1,4 +1,5 @@
 import contextlib
+import re
 import signal
 import unittest
 from unittest.mock import patch
@@ -319,6 +320,34 @@ class AncestorWalkTests(TestCase):
         nodes = make_chain(5)
         expected = [n.pk for n in reversed(nodes[:-1])]
         self.assertEqual(async_to_sync(nodes[-1].aget_ancestor_ids)(), expected)
+
+
+class DescendantWalkQueryShapeTests(TestCase):
+    """
+    The seen set is applied in Python, not as `exclude(pk__in=seen)`.
+
+    `seen` grows with the whole subtree, so putting it in the query would grow
+    the bind parameter list with it and eventually break the backend's limit.
+    """
+
+    def test_query_carries_one_level_not_the_whole_subtree(self):
+        root = DummyHierarchicalDomain.objects.create(name="Root")
+        child = DummyHierarchicalDomain.objects.create(name="Child", parent=root)
+        for i in range(5):
+            DummyHierarchicalDomain.objects.create(name=f"G{i}", parent=child)
+
+        with CaptureQueriesContext(connection) as captured:
+            targets = list(root.get_permission_targets())
+
+        self.assertEqual(len(targets), 7)
+
+        # Every id in the SQL is a `parent_id` filter, so across the whole walk
+        # each of the 7 nodes is named exactly once. Carrying the seen set in
+        # the query instead would name the earlier levels again and again.
+        ids_in_sql = sum(
+            len(re.findall(r"\b\d+\b", q["sql"])) for q in captured.captured_queries
+        )
+        self.assertEqual(ids_in_sql, 7)
 
 
 class HierarchyCycleTests(TestCase):

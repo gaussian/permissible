@@ -114,9 +114,14 @@ def _iter_descendant_levels(model, root_id, max_levels=None, ids_only=False):
     Yield the descendants of `root_id` one level at a time, nearest level first.
 
     One query per level rather than one per node. Every node already seen is
-    excluded from the next query, so each node is yielded at most once and a
-    cycle cannot spin - `max_levels` is a cost bound, not the reason the walk
-    terminates. Pass `ids_only` to read the pk column instead of whole rows.
+    dropped, so each node is yielded at most once and a cycle cannot spin -
+    `max_levels` is a cost bound, not the reason the walk terminates. Pass
+    `ids_only` to read the pk column instead of whole rows.
+
+    The seen set is applied in PYTHON, not as `exclude(pk__in=seen)`. It grows
+    with the whole subtree, so putting it in the query would grow the bind
+    parameter list with it and eventually break the backend's limit. The query
+    carries only the current level, which is unavoidable.
     """
     manager = model._default_manager
     seen = {root_id}
@@ -124,13 +129,20 @@ def _iter_descendant_levels(model, root_id, max_levels=None, ids_only=False):
     levels_done = 0
 
     while max_levels is None or levels_done < max_levels:
-        queryset = manager.filter(parent_id__in=frontier).exclude(pk__in=seen)
-        level = list(queryset.values_list("pk", flat=True) if ids_only else queryset)
+        rows = manager.filter(parent_id__in=frontier)
+        if ids_only:
+            level = [pk for pk in rows.values_list("pk", flat=True) if pk not in seen]
+            child_ids = level
+        else:
+            level = [obj for obj in rows if obj.pk not in seen]
+            child_ids = [obj.pk for obj in level]
+
         if not level:
             return
-        frontier = level if ids_only else [obj.pk for obj in level]
-        seen.update(frontier)
+
+        seen.update(child_ids)
         yield level
+        frontier = child_ids
         levels_done += 1
 
 
@@ -236,6 +248,8 @@ class HierarchicalPermDomain(PermDomain):
 
         # Walk with one level of headroom over the cap, so an over-deep chain is
         # MEASURED rather than truncated to the cap and found compliant.
+        # `exclude_id` is deliberately NOT passed: the walk has to be able to
+        # reach this object's own pk, or the cycle check below can never fire.
         ancestor_ids = walk_ancestor_ids(
             type(self), self.parent_id, max_levels=self.MAX_HIERARCHY_DEPTH
         )
