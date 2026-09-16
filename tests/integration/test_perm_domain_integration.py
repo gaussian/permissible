@@ -3,6 +3,9 @@ Integration tests for PermDomain with Django Guardian.
 This tests RBAC functionality and automatic permission assignment.
 """
 
+from contextlib import nullcontext
+
+import pytest
 from django.db import models
 from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
@@ -16,7 +19,9 @@ from permissible.models import (
     PermissibleMixin,
     build_role_field,
 )
+from permissible.exceptions import RoleEscalationDenied, RoleLockoutDenied
 from permissible.perm_def import p
+from permissible.policies import make_domain_member_policy
 
 
 # Define domain models
@@ -112,6 +117,10 @@ class TestTeamMember(PermDomainMember):
     class Meta:
         app_label = "tests"
         unique_together = ("team", "user")
+
+    @classmethod
+    def get_policies(cls):
+        return {"object": make_domain_member_policy("team")}
 
 
 # Test content model owned by a team
@@ -288,3 +297,102 @@ class PermDomainIntegrationTest(TestCase):
         )
 
         # Test non-member permissions on content
+
+
+# --- Role-change guards: `assign_roles_to_user(by=)` / `remove_roles_from_user(by=)`
+
+
+ROLES = {"owner": "own", "admin": "adm", "viewer": "view", "member": "mem"}
+
+
+@pytest.fixture
+def team(db):
+    """A team with one user per role, plus `other` (no role) and `super`."""
+    User = get_user_model()
+    team = TestIntegrationTeamModel.objects.create(name="Team")
+    users = {n: User.objects.create_user(username=n) for n in [*ROLES, "other"]}
+    users["super"] = User.objects.create_superuser(username="super")
+    for name, role in ROLES.items():
+        team.assign_roles_to_user(users[name], [role])
+    return team, users
+
+
+def expect(allowed, exc):
+    return nullcontext() if allowed else pytest.raises(exc)
+
+
+@pytest.mark.parametrize(
+    "actor, action, allowed",
+    [
+        ("admin", "destroy", True),
+        ("admin", "roles", True),
+        ("admin", "retrieve", False),  # self-only
+        ("member", "destroy", False),
+        ("member", "roles", False),
+        ("member", "retrieve", True),
+    ],
+)
+def test_member_policy(team, actor, action, allowed):
+    domain, users = team
+    row = TestTeamMember.objects.get(team=domain, user=users["member"])
+    context = {"request": {"user": users[actor]}}
+    assert row.has_object_permission(users[actor], action, context) is allowed
+
+
+@pytest.mark.parametrize(
+    "actor, role, allowed",
+    [
+        ("admin", "own", False),  # "own" carries "delete"; "adm" does not
+        ("admin", "adm", True),
+        ("admin", "con", True),
+        ("owner", "own", True),
+        ("viewer", "con", False),  # "con" carries "add_on"
+        ("member", "mem", True),  # "mem" carries only "view", which member holds
+        ("member", "view", False),  # "view" carries "view_on"
+        ("super", "own", True),
+    ],
+)
+def test_no_escalation(team, actor, role, allowed):
+    domain, users = team
+    by, target = users[actor], users["other"]
+    with expect(allowed, RoleEscalationDenied):
+        domain.assign_roles_to_user(target, [role], by=by)
+    assert (target in domain.users.all()) is allowed
+    with expect(allowed, RoleEscalationDenied):
+        domain.remove_roles_from_user(target, [role], by=by)
+    assert target not in domain.users.all()
+
+
+def test_unknown_role_code_is_rejected(team):
+    domain, users = team
+    with pytest.raises(ValueError):
+        domain.assign_roles_to_user(users["other"], ["nope"], by=users["owner"])
+
+
+@pytest.mark.parametrize(
+    "admin_state, owner_roles, target, roles, locked",
+    [
+        ("manager", ["own"], "owner", ["own"], False),  # a second manager remains
+        ("gone", ["own"], "owner", ["own"], True),  # last manager
+        ("gone", ["own"], "owner", None, True),  # None: every role
+        ("inactive", ["own"], "owner", ["own"], True),  # inactive does not count
+        ("gone", ["own", "adm"], "owner", ["adm"], False),  # a manager role stays
+        ("gone", ["own"], "viewer", ["view"], False),  # target is not a manager
+        ("gone", [], "viewer", ["view"], False),  # no manager before: 0 -> 0
+    ],
+)
+def test_no_lockout(team, admin_state, owner_roles, target, roles, locked):
+    domain, users = team
+    if admin_state == "gone":
+        domain.remove_roles_from_user(users["admin"], None)
+    elif admin_state == "inactive":
+        users["admin"].is_active = False
+        users["admin"].save()
+    domain.remove_roles_from_user(users["owner"], None)
+    domain.assign_roles_to_user(users["owner"], owner_roles)
+    # A superuser as `by` passes Rule A, and Rule B has no superuser bypass
+    with expect(not locked, RoleLockoutDenied):
+        domain.remove_roles_from_user(users[target], roles, by=users["super"])
+    removed = set(domain.get_group_ids_for_roles(roles))
+    held = set(users[target].groups.values_list("id", flat=True))
+    assert bool(removed & held) is locked

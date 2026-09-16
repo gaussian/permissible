@@ -131,25 +131,19 @@ def make_domain_owned_policy(domain_attr_path: str):
     }
 
 
-# POLICY MAKER: Creates a policy for a DomainMember object.
-# All actions have perm_def_admin, which gives permissions to those who have
-# the "change_permission" permission on the associated PermDomain object.
-# All actions besides "destroy" have perm_def_self, which gives permissions
-# to the user who is the user field of this PermDomainMember.
+# POLICY MAKER: Creates a policy for a DomainMember object. A member's row is
+# their own config; "destroy" and "roles" need "change_permission" on the domain.
 def make_domain_member_policy(domain_name: str):
     perm_def_self = p(
         [],
         obj_filter=("user_id", "==", "_context.request.user.id"),
     )
-    perm_def_admin = p(
-        ["change_permission"],
-        # This is joined user (unretrieved)
-        "user",
-    )
     return {
         "create": DENY_ALL,
-        "retrieve": perm_def_self | perm_def_admin,
-        "update": perm_def_self | perm_def_admin,
-        "partial_update": perm_def_self | perm_def_admin,
-        "destroy": perm_def_admin,
+        "retrieve": perm_def_self,
+        "update": perm_def_self,
+        "partial_update": perm_def_self,
+        # Removing a member strips their roles: a permission change, not a delete
+        "destroy": p(["change_permission"], domain_name),
+        "roles": p(["change_permission"], domain_name),
     }

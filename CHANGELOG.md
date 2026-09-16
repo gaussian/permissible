@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.11.0
+
+Guards for changing a member's roles on a `PermDomain`; `make_domain_member_policy`
+fixed and reshaped.
+
+### Added
+
+- `assign_roles_to_user()` / `remove_roles_from_user()` take `by=user`. Without
+  it, nothing changes. With it:
+  - **No escalation** (`check_role_change()`, public): `by` must hold, on the
+    domain, every permission each role carries (`ROLE_DEFINITIONS`); role codes
+    are never compared. A role carrying nothing (`mem` by default) is open to
+    all; superusers pass via `has_perms`. Raises `RoleEscalationDenied`, or
+    `ValueError` for an unknown role code. This bounds *which* roles `by` may
+    touch; whether `by` may change roles at all is `change_permission` on the
+    domain, gated by the caller.
+  - **No lockout** (remove only): the change may not take the domain from one
+    active `change_permission` holder to none. Fires on 1 → 0 only; only
+    `is_active` users count; a domain with no manager stays as it is. The
+    domain's role rows are locked (`select_for_update`) as the first read of
+    the transaction, so two concurrent demotions cannot both pass. Raises
+    `RoleLockoutDenied`.
+  - Both subclass `RoleChangeDenied(PermissionDenied)`: DRF answers 403 unless
+    the consumer handles them. All three live in `permissible.exceptions`.
+- `remove_roles_from_user()` runs in `transaction.atomic()` for every caller;
+  `groups.remove()` already was, so nothing visible changes.
+- With `by=`, no escalation costs 2 queries and no lockout 3-4, on top of the
+  unguarded call.
+
+### Fixed
+
+- `make_domain_member_policy()` never granted an admin: its `change_permission`
+  check followed `"user"`, so it tested `change_permission_user` on the joined
+  User (`AttributeError` without `PermissibleMixin` on User, else a denial), and
+  `domain_name` was unused. Now `destroy` and a new `roles` action check
+  `change_permission` on the domain; `retrieve`, `update` and `partial_update`
+  are self-only (the admin branch never worked, so nothing that worked stops).
+
 ## 0.10.0
 
 `HierarchicalPermDomain` tree traversal is now ordered, cycle-safe and
