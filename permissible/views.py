@@ -9,7 +9,7 @@ from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.fields import empty
 from rest_framework.response import Response
 
-from permissible.exceptions import RoleLockoutDenied
+from permissible.exceptions import RoleGrantRefused, RoleLockoutDenied
 
 
 class PermDomainMemberViewSetMixin:
@@ -22,6 +22,7 @@ class PermDomainMemberViewSetMixin:
     - `DELETE {id}/`: `remove_roles_from_user(<held roles>, by=request.user)`,
       then the row. Held, not None: `by` need not be able to revoke every role.
     - `RoleLockoutDenied` -> 409 ("add another manager first"); escalation stays 403.
+    - `RoleGrantRefused` -> 409 `{"code": exc.code, "detail": str(exc)}`.
     """
 
     @action(detail=True, methods=["put"])
@@ -46,7 +47,10 @@ class PermDomainMemberViewSetMixin:
         super().perform_destroy(instance)
 
     def handle_exception(self, exc):
-        if isinstance(exc, RoleLockoutDenied):
+        if isinstance(exc, RoleGrantRefused):
+            exc = APIException({"code": exc.code, "detail": str(exc)})
+            exc.status_code = status.HTTP_409_CONFLICT
+        elif isinstance(exc, RoleLockoutDenied):
             exc = APIException(str(exc), code="lockout")
             exc.status_code = status.HTTP_409_CONFLICT
         return super().handle_exception(exc)

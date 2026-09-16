@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.2
+
+Refusable grants, from `neutron`'s invite-apply and SSO-provisioning paths.
+
+- `permissible.exceptions.RoleGrantRefused` (`code = "grant_refused"`): an
+  `m2m_changed` receiver on `Group.user_set` raises a subclass to veto a grant.
+  `PermDomainMemberViewSetMixin` maps it to 409 `{"code", "detail"}`.
+- `set_roles_for_user(..., member_if_refused=False)`: with `True`, a refusal
+  is logged at error and the user keeps the roles they held, plus
+  `MEMBER_ROLE`. For unattended grants, where nobody reads a refusal.
+
 ## 0.12.1
 
 - Fix: import cycle that broke every consumer at import in 0.12.0.
