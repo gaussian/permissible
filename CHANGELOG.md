@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.11.0
+
+Guards for changing a member's roles on a `PermDomain`, and a fix to
+`make_domain_member_policy`.
+
+### Added
+
+- `assign_roles_to_user()` and `remove_roles_from_user()` take an optional
+  `by=user`. When given, the change is guarded; callers that pass nothing are
+  unchanged. Both guards live on the model so every caller (API, admin, SSO,
+  invitations) can use them.
+  - **No escalation** (`check_role_change()`, public): `by` may grant or revoke
+    a role only if they hold, on the domain, every permission that role carries
+    per `ROLE_DEFINITIONS`. Roles are never compared by code. A role carrying no
+    permissions (`mem` by default) may be granted by anyone; superusers pass via
+    `has_perms`. Raises `RoleEscalationDenied`.
+  - **No lockout** (`remove_roles_from_user` only): the change may not take the
+    domain from one active member holding `change_permission` to none. Only
+    `is_active` users count. The domain's role rows are locked with
+    `select_for_update()` inside `transaction.atomic()` before the count, so two
+    concurrent demotions cannot both pass. Fires only on 1 → 0; a domain that
+    already has no manager stays as it is. Raises `RoleLockoutDenied`.
+  - Both exceptions subclass `RoleChangeDenied`, itself a
+    `django.core.exceptions.PermissionDenied`, so DRF maps them to 403 unless
+    the consumer handles them. All three are exported from `permissible.models`.
+- `remove_roles_from_user()` now runs inside `transaction.atomic()` for every
+  caller (the lock needs it). `user.groups.remove()` was already atomic, so this
+  adds no visible behaviour.
+
+### Fixed
+
+- `make_domain_member_policy()` never granted an admin. Its `change_permission`
+  check followed `"user"`, so it tested `change_permission_user` on the joined
+  User: an `AttributeError` when the User model lacks `PermissibleMixin`, a
+  denial otherwise. The `domain_name` argument was unused. It now checks
+  `change_permission` on the domain, so a domain admin passes `destroy` on a
+  member row and a plain member does not.
+
 ## 0.10.0
 
 `HierarchicalPermDomain` tree traversal is now ordered, cycle-safe and
