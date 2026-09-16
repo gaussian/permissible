@@ -11,8 +11,7 @@ from typing import TYPE_CHECKING, Type
 from django.http import Http404
 from rest_framework import permissions
 
-from permissible.utils.views import make_context_from_request
-from permissible.views import CheckViewConfigMixin
+from permissible.utils.views import CheckViewConfigMixin, make_context_from_request
 
 if TYPE_CHECKING:
     from permissible.models import PermissibleMixin
