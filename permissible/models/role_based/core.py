@@ -10,8 +10,10 @@ from abc import abstractmethod
 from typing import Iterable, Optional, Type
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, AbstractBaseUser, PermissionsMixin
-from django.db import models
+from django.core.exceptions import PermissionDenied
+from django.db import models, transaction
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
@@ -22,6 +24,18 @@ from permissible.utils.signals import get_subclasses
 from .base import AbstractModelMetaclass, BasePermDomain
 
 logger = logging.getLogger(__name__)
+
+
+class RoleChangeDenied(PermissionDenied):
+    """Base for the guards on `assign_roles_to_user` / `remove_roles_from_user`."""
+
+
+class RoleEscalationDenied(RoleChangeDenied):
+    """`by` lacks, on the domain, a permission the role carries."""
+
+
+class RoleLockoutDenied(RoleChangeDenied):
+    """The change would leave the domain with no active `change_permission` holder."""
 
 
 class PermDomain(BasePermDomain):
@@ -135,11 +149,73 @@ class PermDomain(BasePermDomain):
             "group_id", flat=True
         )
 
+    def check_role_change(self, by: PermissionsMixin, roles: Optional[list[str]]):
+        """
+        Rule A (no escalation): `by` may grant or revoke a role only if they hold,
+        on this domain, every permission that role carries per `ROLE_DEFINITIONS`.
+        Roles are compared by the permissions they carry, never by code. A role
+        carrying no permissions may be granted by anyone; superusers pass via
+        `has_perms`. Raises `RoleEscalationDenied`.
+        """
+        role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
+        for role in role_definitions if roles is None else roles:
+            perms = self.get_permission_codenames(role_definitions[role][1], True)
+            if not by.has_perms(perms, self):
+                raise RoleEscalationDenied(
+                    f"{by} may not grant or revoke role {role!r} on {self}"
+                )
+
+    def _check_no_lockout(self, user: PermissionsMixin, removed_group_ids: list):
+        """
+        Rule B (no lockout): removing `removed_group_ids` from `user` must not
+        take the domain from one active `change_permission` holder to none.
+        Must run inside a transaction: the domain's role rows are locked so two
+        concurrent demotions cannot both pass. Raises `RoleLockoutDenied`.
+        """
+        role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
+        manager_roles = [
+            role
+            for role, (_, short_perm_codes) in role_definitions.items()
+            if "change_permission" in short_perm_codes
+        ]
+        manager_group_ids = set(
+            self.get_role_joins()
+            .select_for_update()
+            .filter(role__in=manager_roles)
+            .values_list("group_id", flat=True)
+        )
+        kept_group_ids = manager_group_ids - set(removed_group_ids)
+        active_managers = get_user_model().objects.filter(is_active=True)
+        # Any active manager left after the change: another user, or `user`
+        # via a manager role that is not being removed.
+        managers_after = active_managers.filter(
+            models.Q(groups__in=kept_group_ids)
+            | models.Q(groups__in=manager_group_ids) & ~models.Q(pk=user.pk)
+        )
+        # Fires only on 1 -> 0: `user` must be an active manager now.
+        if (
+            not managers_after.exists()
+            and active_managers.filter(
+                pk=user.pk, groups__in=manager_group_ids
+            ).exists()
+        ):
+            raise RoleLockoutDenied(
+                f"{user} is the last active manager of {self}; add another before "
+                f"removing their role"
+            )
+
     def assign_roles_to_user(
         self,
         user: PermissionsMixin,
         roles: Optional[list[str]],
+        by: Optional[PermissionsMixin] = None,
     ):
+        """
+        Add `user` to the groups for `roles` (all roles if None). Pass `by` to
+        guard the change: see `check_role_change`.
+        """
+        if by is not None:
+            self.check_role_change(by, roles)
         group_ids = self.get_group_ids_for_roles(roles=roles)
         logger.debug(
             "Assigning roles to user %s: groups=%s, roles=%s",
@@ -153,15 +229,25 @@ class PermDomain(BasePermDomain):
         self,
         user: PermissionsMixin,
         roles: Optional[list[str]],
+        by: Optional[PermissionsMixin] = None,
     ):
-        group_ids = self.get_group_ids_for_roles(roles=roles)
-        logger.debug(
-            "Removing roles from user %s: groups=%s, roles=%s",
-            user,
-            list(group_ids),
-            roles,
-        )
-        user.groups.remove(*group_ids)
+        """
+        Remove `user` from the groups for `roles` (all roles if None). Pass `by`
+        to guard the change: see `check_role_change` and `_check_no_lockout`.
+        """
+        with transaction.atomic():
+            if by is not None:
+                self.check_role_change(by, roles)
+            group_ids = list(self.get_group_ids_for_roles(roles=roles))
+            if by is not None:
+                self._check_no_lockout(user, group_ids)
+            logger.debug(
+                "Removing roles from user %s: groups=%s, roles=%s",
+                user,
+                group_ids,
+                roles,
+            )
+            user.groups.remove(*group_ids)
 
     @classmethod
     def get_role_join_rel(cls) -> models.ManyToOneRel:

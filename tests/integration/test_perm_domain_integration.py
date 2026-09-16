@@ -14,9 +14,12 @@ from permissible.models import (
     PermDomainRole,
     PermDomainMember,
     PermissibleMixin,
+    RoleEscalationDenied,
+    RoleLockoutDenied,
     build_role_field,
 )
 from permissible.perm_def import p
+from permissible.policies import make_domain_member_policy
 
 
 # Define domain models
@@ -112,6 +115,10 @@ class TestTeamMember(PermDomainMember):
     class Meta:
         app_label = "tests"
         unique_together = ("team", "user")
+
+    @classmethod
+    def get_policies(cls):
+        return {"object": make_domain_member_policy("team")}
 
 
 # Test content model owned by a team
@@ -288,3 +295,72 @@ class PermDomainIntegrationTest(TestCase):
         )
 
         # Test non-member permissions on content
+
+
+@override_settings(
+    AUTHENTICATION_BACKENDS=(
+        "django.contrib.auth.backends.ModelBackend",
+        "guardian.backends.ObjectPermissionBackend",
+    )
+)
+class RoleChangeGuardTest(TestCase):
+    """
+    `assign_roles_to_user(by=...)` / `remove_roles_from_user(by=...)`:
+    no escalation (Rule A) and no lockout (Rule B).
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.owner = User.objects.create_user(username="owner")
+        cls.admin = User.objects.create_user(username="admin")
+        cls.member = User.objects.create_user(username="member")
+        cls.other = User.objects.create_user(username="other")
+        cls.team = TestIntegrationTeamModel.objects.create(name="Team")
+        cls.team.assign_roles_to_user(cls.owner, roles=["own"])
+        cls.team.assign_roles_to_user(cls.admin, roles=["adm"])
+        cls.team.assign_roles_to_user(cls.member, roles=["mem"])
+
+    def test_member_policy_admin_passes_destroy_member_does_not(self):
+        row = TestTeamMember.objects.get(team=self.team, user=self.member)
+        self.assertTrue(row.has_object_permission(self.admin, "destroy"))
+        self.assertFalse(row.has_object_permission(self.member, "destroy"))
+
+    def test_admin_cannot_grant_or_revoke_role_carrying_delete(self):
+        # "adm" lacks "delete"; "own" carries it
+        with self.assertRaises(RoleEscalationDenied):
+            self.team.assign_roles_to_user(self.other, ["own"], by=self.admin)
+        with self.assertRaises(RoleEscalationDenied):
+            self.team.remove_roles_from_user(self.owner, ["own"], by=self.admin)
+        self.assertNotIn(self.other, self.team.users.all())
+        self.assertIn(self.owner, self.team.users.all())
+
+    def test_owner_can_grant_and_revoke_role_carrying_delete(self):
+        self.team.assign_roles_to_user(self.other, ["own"], by=self.owner)
+        self.assertIn(self.other, self.team.users.all())
+        self.team.remove_roles_from_user(self.other, ["own"], by=self.owner)
+        self.assertNotIn(self.other, self.team.users.all())
+
+    def test_member_may_grant_a_role_within_their_own_permissions(self):
+        # "mem" carries only "view" here, which the member holds on the team
+        self.team.assign_roles_to_user(self.other, ["mem"], by=self.member)
+        self.assertIn(self.other, self.team.users.all())
+
+    def test_last_manager_cannot_be_demoted(self):
+        # Two managers: demoting one passes; demoting the last one does not
+        self.team.remove_roles_from_user(self.admin, ["adm"], by=self.owner)
+        with self.assertRaises(RoleLockoutDenied):
+            self.team.remove_roles_from_user(self.owner, ["own"], by=self.owner)
+        self.assertIn(self.owner, self.team.users.all())
+
+    def test_second_manager_makes_demotion_pass(self):
+        self.team.remove_roles_from_user(self.admin, ["adm"], by=self.owner)
+        self.team.assign_roles_to_user(self.other, ["adm"], by=self.owner)
+        self.team.remove_roles_from_user(self.owner, ["own"], by=self.owner)
+        self.assertNotIn(self.owner, self.team.users.all())
+
+    def test_inactive_manager_does_not_count(self):
+        self.admin.is_active = False
+        self.admin.save()
+        with self.assertRaises(RoleLockoutDenied):
+            self.team.remove_roles_from_user(self.owner, ["own"], by=self.owner)
