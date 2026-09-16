@@ -15,6 +15,7 @@ from django.contrib.auth.models import Group, AbstractBaseUser, PermissionsMixin
 from django.db import models, transaction
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
+from guardian.shortcuts import get_perms
 
 from permissible.exceptions import RoleEscalationDenied, RoleLockoutDenied
 from permissible.models.permissible_mixin import PermissibleMixin
@@ -146,14 +147,22 @@ class PermDomain(BasePermDomain):
         roles at all is `change_permission` on the domain, gated by the caller.
         """
         role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
-        for role in role_definitions if roles is None else roles:
-            if role not in role_definitions:
-                raise ValueError(f"Unknown role {role!r} for {self.__class__}")
-            perms = self.get_permission_codenames(role_definitions[role][1], True)
-            if not by.has_perms(perms, self):
-                raise RoleEscalationDenied(
-                    f"{by} may not grant or revoke role {role!r} on {self}"
-                )
+        roles = list(role_definitions if roles is None else roles)
+        if unknown := set(roles) - set(role_definitions):
+            raise ValueError(f"Unknown roles {unknown} for {self.__class__}")
+        needed = {sp for role in roles for sp in role_definitions[role][1]}
+        # guardian answers every perm in 2 queries; `has_perms` costs 2 per perm,
+        # so it decides only the ones guardian did not grant (and stays the authority)
+        granted = set(get_perms(by, self))
+        missing = [
+            sp
+            for sp in sorted(needed)
+            if self.get_permission_codename(sp, False) not in granted
+        ]
+        if not by.has_perms(self.get_permission_codenames(missing, True), self):
+            raise RoleEscalationDenied(
+                f"{by} may not grant or revoke {roles} on {self}"
+            )
 
     def _check_no_lockout(self, user: PermissionsMixin, roles: Optional[list[str]]):
         """

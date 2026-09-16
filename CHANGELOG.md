@@ -27,6 +27,23 @@ fixed and reshaped.
 - `remove_roles_from_user()` runs in `transaction.atomic()` for every caller;
   `groups.remove()` already was, so nothing visible changes.
 
+### Performance
+
+Query counts on SQLite for a `by` that holds the permissions, against the same
+call without `by`:
+
+| Call | no `by` | `by=` |
+|---|---|---|
+| `assign_roles_to_user(u, ["own"])` | 8 | **10** |
+| `assign_roles_to_user(u, None)` | 12 | **14** |
+| `remove_roles_from_user(u, ["adm"])` | 7 | **12** |
+| `remove_roles_from_user(u, None)` | 15 | **20** |
+
+No escalation costs 2 queries: guardian's `get_perms()` answers every needed
+permission at once, and `has_perms()` (2 queries per permission) decides only
+the ones guardian did not grant. Permissions are deduplicated across roles. No
+lockout costs 3 queries (4 when the lock finds no other manager).
+
 ### Fixed
 
 - `make_domain_member_policy()` never granted an admin: its `change_permission`
