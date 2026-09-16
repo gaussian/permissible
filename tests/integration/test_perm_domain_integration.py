@@ -10,6 +10,7 @@ from django.db import models
 from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.db.models.signals import m2m_changed
 from guardian.shortcuts import get_perms
 from rest_framework import serializers
 from rest_framework.test import APIRequestFactory, force_authenticate
@@ -25,6 +26,7 @@ from permissible.models import (
     build_role_field,
 )
 from permissible.exceptions import RoleEscalationDenied, RoleLockoutDenied
+from permissible.exceptions import RoleGrantRefused
 from permissible.perm_def import p, IS_AUTHENTICATED
 from permissible.permissions import PermissiblePerms
 from permissible.policies import make_domain_member_policy
@@ -496,6 +498,45 @@ def test_set_roles_for_user_by(team, actor, target, roles, exc):
     assert after == ({*roles, "mem"} if exc is None else before)
 
 
+class SeatRefused(RoleGrantRefused):
+    code = "seat_refused"
+
+
+@pytest.fixture
+def no_seats(team):
+    """A membership-signal receiver that vetoes the "own" group after the add."""
+    (own,) = team[0].get_group_ids_for_roles(["own"])
+
+    def refuse(action, pk_set, **kwargs):
+        if action == "post_add" and own in pk_set:
+            raise SeatRefused("No seats left")
+
+    m2m_changed.connect(refuse, sender=Group.user_set.through)
+    yield
+    m2m_changed.disconnect(refuse, sender=Group.user_set.through)
+
+
+@pytest.mark.parametrize(
+    "target, member_if_refused, held",
+    [
+        ("other", False, set()),  # rolled back entirely (post_add: the rows were in)
+        ("other", True, {"mem"}),  # a new member
+        ("viewer", True, {"view", "mem"}),  # keeps what they held
+    ],
+)
+def test_set_roles_for_user_refused(
+    team, no_seats, caplog, target, member_if_refused, held
+):
+    domain, users = team
+    with expect(member_if_refused, SeatRefused):
+        domain.set_roles_for_user(
+            users[target], ["own", "view"], member_if_refused=member_if_refused
+        )
+    assert set(domain.get_roles_for_user(users[target])) == held
+    assert (users[target] in domain.users.all()) is member_if_refused
+    assert ("No seats left" in caplog.text) is member_if_refused
+
+
 # --- `PermDomainMemberViewSetMixin`
 
 
@@ -534,6 +575,12 @@ def test_roles_action(team, actor, target, roles, status):
         assert users[target] in domain.users.all()
     if status == 400:
         assert list(response.data) == ["roles"]
+
+
+def test_roles_action_refused(team, no_seats):
+    response, _ = call(team, "owner", "member", {"roles": ["own"]})
+    assert response.status_code == 409, response.data
+    assert response.data == {"code": "seat_refused", "detail": "No seats left"}
 
 
 @pytest.mark.parametrize(

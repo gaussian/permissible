@@ -19,6 +19,7 @@ from django.dispatch import receiver
 from guardian.shortcuts import get_perms
 
 from permissible.exceptions import RoleEscalationDenied, RoleLockoutDenied
+from permissible.exceptions import RoleGrantRefused
 from permissible.models.permissible_mixin import PermissibleMixin
 from permissible.models.utils import reset_permissions
 from permissible.utils.signals import get_subclasses
@@ -263,12 +264,14 @@ class PermDomain(BasePermDomain):
         user: PermissionsMixin,
         roles: Iterable[str],
         by: Optional[PermissionsMixin] = None,
+        member_if_refused: bool = False,
     ):
         """
         Replace `user`'s roles on this domain with `roles` + `MEMBER_ROLE`. Adds
         before it removes: at zero groups the member signal deletes the row and
         re-creates it with a new id. Unknown code: `ValueError`. `by`: the guards
         of `assign_roles_to_user` / `remove_roles_from_user`, in one transaction.
+        `member_if_refused`: log a receiver's `RoleGrantRefused`; keep held + `MEMBER_ROLE`.
         """
         wanted = set(roles) | {MEMBER_ROLE}
         with transaction.atomic():
@@ -289,7 +292,14 @@ class PermDomain(BasePermDomain):
                     self._check_no_lockout(user, to_remove)
                 self.check_role_change(by, changes)
             logger.debug("Setting roles for user %s: +%s -%s", user, to_add, to_remove)
-            user.groups.add(*[group_ids[role] for role in to_add])
+            try:
+                with transaction.atomic():  # a refusal must not poison the outer
+                    user.groups.add(*[group_ids[role] for role in to_add])
+            except RoleGrantRefused if member_if_refused else () as exc:
+                logger.error(
+                    "%s; %s keeps %s + %s on %s", exc, user, held, MEMBER_ROLE, self
+                )
+                return self.set_roles_for_user(user, held, by=by)
             user.groups.remove(*[group_ids[role] for role in to_remove])
 
     @classmethod
