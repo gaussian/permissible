@@ -141,11 +141,7 @@ def make_domain_member_policy(domain_name: str):
         [],
         obj_filter=("user_id", "==", "_context.request.user.id"),
     )
-    perm_def_admin = p(
-        ["change_permission"],
-        # This is joined user (unretrieved)
-        "user",
-    )
+    perm_def_admin = p(["change_permission"], domain_name)
     return {
         "create": DENY_ALL,
         "retrieve": perm_def_self | perm_def_admin,
