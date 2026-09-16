@@ -335,6 +335,10 @@ class RoleChangeGuardTest(TestCase):
         self.assertNotIn(self.other, self.team.users.all())
         self.assertIn(self.owner, self.team.users.all())
 
+    def test_unknown_role_code_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.team.assign_roles_to_user(self.other, ["nope"], by=self.owner)
+
     def test_owner_can_grant_and_revoke_role_carrying_delete(self):
         self.team.assign_roles_to_user(self.other, ["own"], by=self.owner)
         self.assertIn(self.other, self.team.users.all())

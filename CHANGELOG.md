@@ -15,12 +15,16 @@ Guards for changing a member's roles on a `PermDomain`, and a fix to
     a role only if they hold, on the domain, every permission that role carries
     per `ROLE_DEFINITIONS`. Roles are never compared by code. A role carrying no
     permissions (`mem` by default) may be granted by anyone; superusers pass via
-    `has_perms`. Raises `RoleEscalationDenied`.
+    `has_perms`. Raises `RoleEscalationDenied`; `ValueError` for a role code
+    not in `ROLE_DEFINITIONS`. This bounds *which* roles `by` may touch.
+    Whether `by` may change roles at all is still `change_permission` on the
+    domain: gate that at the caller (see `make_domain_member_policy`).
   - **No lockout** (`remove_roles_from_user` only): the change may not take the
     domain from one active member holding `change_permission` to none. Only
     `is_active` users count. The domain's role rows are locked with
-    `select_for_update()` inside `transaction.atomic()` before the count, so two
-    concurrent demotions cannot both pass. Fires only on 1 → 0; a domain that
+    `select_for_update()` inside `transaction.atomic()`, as the first read of
+    the transaction, so two concurrent demotions cannot both pass on any
+    backend that supports row locks. Fires only on 1 → 0; a domain that
     already has no manager stays as it is. Raises `RoleLockoutDenied`.
   - Both exceptions subclass `RoleChangeDenied`, itself a
     `django.core.exceptions.PermissionDenied`, so DRF maps them to 403 unless

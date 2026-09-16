@@ -156,21 +156,31 @@ class PermDomain(BasePermDomain):
         Roles are compared by the permissions they carry, never by code. A role
         carrying no permissions may be granted by anyone; superusers pass via
         `has_perms`. Raises `RoleEscalationDenied`.
+
+        This bounds WHICH roles `by` may touch. Whether `by` may change roles at
+        all is still `change_permission` on the domain: gate that at the caller
+        (see `make_domain_member_policy`).
         """
         role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
         for role in role_definitions if roles is None else roles:
+            if role not in role_definitions:
+                raise ValueError(f"Unknown role {role!r} for {self.__class__}")
             perms = self.get_permission_codenames(role_definitions[role][1], True)
             if not by.has_perms(perms, self):
                 raise RoleEscalationDenied(
                     f"{by} may not grant or revoke role {role!r} on {self}"
                 )
 
-    def _check_no_lockout(self, user: PermissionsMixin, removed_group_ids: list):
+    def _check_no_lockout(self, user: PermissionsMixin, roles: Optional[list[str]]):
         """
-        Rule B (no lockout): removing `removed_group_ids` from `user` must not
-        take the domain from one active `change_permission` holder to none.
-        Must run inside a transaction: the domain's role rows are locked so two
-        concurrent demotions cannot both pass. Raises `RoleLockoutDenied`.
+        Rule B (no lockout): removing `roles` from `user` must not take the
+        domain from one active `change_permission` holder to none. Raises
+        `RoleLockoutDenied`.
+
+        Must run inside a transaction, as its FIRST read: the domain's role rows
+        are locked so two concurrent demotions cannot both pass. A non-locking
+        read before the lock would pin the snapshot on REPEATABLE READ backends
+        (MySQL) and the count after the lock would not see the other commit.
         """
         role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
         manager_roles = [
@@ -184,7 +194,7 @@ class PermDomain(BasePermDomain):
             .filter(role__in=manager_roles)
             .values_list("group_id", flat=True)
         )
-        kept_group_ids = manager_group_ids - set(removed_group_ids)
+        kept_group_ids = manager_group_ids - set(self.get_group_ids_for_roles(roles))
         active_managers = get_user_model().objects.filter(is_active=True)
         # Any active manager left after the change: another user, or `user`
         # via a manager role that is not being removed.
@@ -237,14 +247,13 @@ class PermDomain(BasePermDomain):
         """
         with transaction.atomic():
             if by is not None:
+                self._check_no_lockout(user, roles)  # first: it takes the lock
                 self.check_role_change(by, roles)
-            group_ids = list(self.get_group_ids_for_roles(roles=roles))
-            if by is not None:
-                self._check_no_lockout(user, group_ids)
+            group_ids = self.get_group_ids_for_roles(roles=roles)
             logger.debug(
                 "Removing roles from user %s: groups=%s, roles=%s",
                 user,
-                group_ids,
+                list(group_ids),
                 roles,
             )
             user.groups.remove(*group_ids)
