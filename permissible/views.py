@@ -64,20 +64,24 @@ class CheckViewConfigMixin:
 
 class PermDomainMemberViewSetMixin:
     """
-    For a `PermDomainMember` viewset. `PUT {id}/roles/` with `{"roles": [code]}`
-    replaces the member's roles (`set_roles_for_user(by=request.user)`) and
-    returns the row; `DELETE {id}/` removes every role `by=request.user`, then
-    deletes the row. Gate both with `make_domain_member_policy` (its "roles" and
-    "destroy" keys). `RoleLockoutDenied` answers 409, not 403: the client should
-    add another manager first, not ask for permission.
+    For a `PermDomainMember` viewset. Gate with `make_domain_member_policy`
+    ("roles", "destroy") and a global policy that also has "roles".
+
+    - `PUT {id}/roles/` `{"roles": [code]}`: 400 (keyed "roles") for a code not
+      in `ROLE_DEFINITIONS`; `set_roles_for_user(by=request.user)`; returns the row.
+    - `DELETE {id}/`: `remove_roles_from_user(<held roles>, by=request.user)`,
+      then the row. Held, not None: `by` need not be able to revoke every role.
+    - `RoleLockoutDenied` -> 409 ("add another manager first"); escalation stays 403.
     """
 
     @action(detail=True, methods=["put"])
     def roles(self, request, *args, **kwargs):
         member = self.get_object()
-        domain = getattr(member, member.get_domain_field().name)
-        codes = list(domain.get_role_join_rel().related_model.role_labels())
-        field = serializers.ListField(child=serializers.ChoiceField(choices=codes))
+        domain = member.get_domain()
+        labels = domain.get_role_join_rel().related_model.role_labels()
+        field = serializers.ListField(
+            child=serializers.ChoiceField(choices=labels.items())
+        )
         try:
             roles = field.run_validation(request.data.get("roles", empty))
         except ValidationError as exc:
@@ -86,8 +90,7 @@ class PermDomainMemberViewSetMixin:
         return Response(self.get_serializer(member).data)
 
     def perform_destroy(self, instance):
-        domain = getattr(instance, instance.get_domain_field().name)
-        # The held roles, not None: `by` need not be able to revoke every role
+        domain = instance.get_domain()
         held = set(domain.get_roles_for_user(instance.user))
         domain.remove_roles_from_user(instance.user, held, by=self.request.user)
         super().perform_destroy(instance)

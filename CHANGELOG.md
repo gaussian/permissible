@@ -11,33 +11,31 @@ The member-roles endpoint and its helpers, moved here from `neutron`.
 - `PermDomain.get_roles_for_user(user)`: the codes `user` holds on this domain,
   one query on the role rows.
 - `PermDomain.set_roles_for_user(user, roles, by=None)`: replace semantics.
-  Adds the missing roles first, then removes the rest, so the member never holds
-  zero groups (the member signal would delete their row and re-create it with a
-  new id). `MEMBER_ROLE` is always kept. An unknown code raises `ValueError`.
-  One transaction: with `by=`, a denied removal also rolls back the additions,
-  and the domain's role rows are locked as the transaction's first read so the
-  no-lockout guard keeps its guarantee (see 0.11.0).
-- `PermDomainRole.role_labels()`: `{code: label}` from `ROLE_DEFINITIONS`, so
-  no consumer hard-codes roles.
+  Adds before it removes (at zero groups the member signal deletes the row and
+  re-creates it with a new id); `MEMBER_ROLE` is always kept; an unknown code
+  raises `ValueError`. One transaction: with `by=`, a denied removal rolls back
+  the additions, and the domain's role rows are locked (pk order) as the first
+  read, so the 0.11.0 no-lockout guarantee holds.
+- `PermDomainRole.role_labels()`: `{code: label}` from `ROLE_DEFINITIONS`.
+- `PermDomainFieldMixin.get_domain()`: the `PermDomain` of a role or member row.
 - `PermDomainMemberViewSetMixin` (`permissible.views`) for a `PermDomainMember`
   viewset:
-  - `PUT {id}/roles/` with `{"roles": [code]}`: validated against
-    `ROLE_DEFINITIONS` (400, keyed on `roles`), calls
-    `set_roles_for_user(by=request.user)`, returns the row.
-  - `DELETE {id}/`: removes the roles the member holds `by=request.user` (not
-    `None`: an admin need not be able to revoke `own`), then deletes the row.
-  - `RoleLockoutDenied` answers **409**, not 403: the client should add another
-    manager first, not ask for permission. `RoleEscalationDenied` stays 403.
+  - `PUT {id}/roles/` `{"roles": [code]}`: 400 (keyed on `roles`) for a code
+    not in `ROLE_DEFINITIONS`; `set_roles_for_user(by=request.user)`; returns
+    the row.
+  - `DELETE {id}/`: removes the roles the member holds `by=request.user`, then
+    the row. Held, not `None`: `by` need not be able to revoke every role.
+  - `RoleLockoutDenied` answers **409**; `RoleEscalationDenied` stays 403.
     Override `handle_exception` to change this.
-  - Gate both with `make_domain_member_policy` (its `roles` and `destroy`
-    keys), and add `roles` to the member model's global policy as well, or
-    `has_global_permission` raises.
+  - Gate with `make_domain_member_policy` (`roles`, `destroy`). The member
+    model's global policy needs `roles` too, or `has_global_permission` raises.
 
 ### Notes
 
-- With `ATOMIC_REQUESTS=True`, the request's first read is `get_object()`, so
-  the no-lockout guard's "first read" guarantee does not hold on REPEATABLE
-  READ backends (MySQL) for any API caller. Unchanged from 0.11.0.
+- With `ATOMIC_REQUESTS=True`, `get_object()` is the request's first read, so
+  the no-lockout "first read" guarantee does not hold on REPEATABLE READ
+  backends (MySQL). Postgres (READ COMMITTED) is unaffected. Unchanged from
+  0.11.0.
 
 ## 0.11.0
 

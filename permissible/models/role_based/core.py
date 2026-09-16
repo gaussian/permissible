@@ -261,11 +261,10 @@ class PermDomain(BasePermDomain):
         by: Optional[PermissionsMixin] = None,
     ):
         """
-        Replace `user`'s roles on this domain with `roles` plus `MEMBER_ROLE`.
-        Adds before it removes, so `user` never holds zero groups (the member
-        signal would delete their row and re-create it with a new id). Raises
-        `ValueError` for an unknown code. `by`: see `assign_roles_to_user` and
-        `remove_roles_from_user`.
+        Replace `user`'s roles on this domain with `roles` + `MEMBER_ROLE`. Adds
+        before it removes: at zero groups the member signal deletes the row and
+        re-creates it with a new id. Unknown code: `ValueError`. `by`: the guards
+        of `assign_roles_to_user` / `remove_roles_from_user`, in one transaction.
         """
         role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
         wanted = set(roles) | {MEMBER_ROLE}
@@ -273,8 +272,8 @@ class PermDomain(BasePermDomain):
             raise ValueError(f"Unknown roles {unknown} for {self.__class__}")
         with transaction.atomic():
             if by is not None:
-                # The lockout lock must be the transaction's first read; a fixed
-                # lock order (pk) keeps two such transactions from deadlocking
+                # First read of the transaction (see `_check_no_lockout`), in a
+                # fixed order so two of these cannot deadlock
                 rows = self.get_role_joins().select_for_update().order_by("pk")
                 list(rows.values_list("pk"))
             held = set(self.get_roles_for_user(user))
@@ -360,6 +359,9 @@ class PermDomainFieldMixin(object):
         )
 
         return domain_fields[0]
+
+    def get_domain(self) -> PermDomain:
+        return getattr(self, self.get_domain_field().name)
 
 
 def build_role_field(role_definitions):
@@ -480,7 +482,7 @@ class PermDomainRole(
 
     @classmethod
     def role_labels(cls) -> dict[str, str]:
-        """`{code: label}` from `ROLE_DEFINITIONS`, so no consumer hard-codes roles."""
+        """`{code: label}` from `ROLE_DEFINITIONS`."""
         return {code: label for code, (label, _) in cls.ROLE_DEFINITIONS.items()}
 
     @classmethod
@@ -552,6 +554,4 @@ class PermDomainMember(
         abstract = True
 
     def __str__(self):
-        domain_field = self.get_domain_field()
-        domain_obj = getattr(self, domain_field.name)
-        return f"{domain_obj} / {self.user}"
+        return f"{self.get_domain()} / {self.user}"

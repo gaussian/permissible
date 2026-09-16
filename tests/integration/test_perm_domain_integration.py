@@ -463,7 +463,7 @@ def test_set_roles_for_user(team, target, roles, held):
     old = TestTeamMember.objects.filter(team=domain, user=users[target]).first()
     domain.set_roles_for_user(users[target], roles)
     assert set(domain.get_roles_for_user(users[target])) == held
-    # Added before removed: the row survives with its id (the signal never fires 0 -> 1)
+    # Add-then-remove: the row keeps its id
     row = TestTeamMember.objects.get(team=domain, user=users[target])
     assert old is None or row.pk == old.pk
 
@@ -491,7 +491,7 @@ def test_set_roles_for_user_by(team, actor, target, roles, exc):
     before = set(domain.get_roles_for_user(users[target]))
     with expect(exc is None, exc):
         domain.set_roles_for_user(users[target], roles, by=users[actor])
-    # One transaction: a denied removal also rolls back the additions
+    # One transaction: a denied removal rolls back the additions
     after = set(domain.get_roles_for_user(users[target]))
     assert after == ({*roles, "mem"} if exc is None else before)
 
@@ -499,13 +499,14 @@ def test_set_roles_for_user_by(team, actor, target, roles, exc):
 # --- `PermDomainMemberViewSetMixin`
 
 
-def call(actor, method, row, data=None):
-    view = TestTeamMemberViewSet.as_view(
-        {method: "destroy" if data is None else "roles"}
-    )
+def call(team, actor, target, data=None):
+    """`PUT {target's row}/roles/` with `data`, or `DELETE` it when `data` is None."""
+    domain, users = team
+    method, name = ("delete", "destroy") if data is None else ("put", "roles")
     request = getattr(APIRequestFactory(), method)("/", data, format="json")
-    force_authenticate(request, actor)
-    return view(request, pk=row.pk)
+    force_authenticate(request, users[actor])
+    row = TestTeamMember.objects.get(team=domain, user=users[target])
+    return TestTeamMemberViewSet.as_view({method: name})(request, pk=row.pk), row
 
 
 @pytest.mark.parametrize(
@@ -524,8 +525,7 @@ def test_roles_action(team, actor, target, roles, status):
     domain, users = team
     if status == 409:
         domain.remove_roles_from_user(users["admin"], ["adm"])
-    row = TestTeamMember.objects.get(team=domain, user=users[target])
-    response = call(users[actor], "put", row, {} if roles is None else {"roles": roles})
+    response, row = call(team, actor, target, {} if roles is None else {"roles": roles})
     assert response.status_code == status, response.data
     if status == 200:
         assert response.data["id"] == row.id
@@ -549,8 +549,7 @@ def test_destroy(team, actor, target, status):
     domain, users = team
     if status == 409:
         domain.remove_roles_from_user(users["admin"], ["adm"])
-    row = TestTeamMember.objects.get(team=domain, user=users[target])
-    response = call(users[actor], "delete", row)
+    response, row = call(team, actor, target)
     assert response.status_code == status, response.data
     assert TestTeamMember.objects.filter(pk=row.pk).exists() is (status != 204)
     assert (users[target] in domain.users.all()) is (status != 204)
