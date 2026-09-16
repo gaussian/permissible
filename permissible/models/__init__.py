@@ -1,4 +1,5 @@
 from .role_based.core import (
+    MEMBER_ROLE,
     PermDomainRole,
     PermDomain,
     PermDomainMember,

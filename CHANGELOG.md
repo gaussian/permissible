@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.12.0
+
+The member-roles endpoint and its helpers, from `neutron`.
+
+- `MEMBER_ROLE = "mem"` (`permissible.models`).
+- `PermDomain.get_roles_for_user(user)`: the codes `user` holds; one query.
+- `PermDomain.set_roles_for_user(user, roles, by=None)`: replace semantics.
+  Adds before it removes, so the member row keeps its id; `MEMBER_ROLE` is
+  always kept; an unknown code raises `ValueError`. One transaction; with
+  `by=`, the role rows are locked as its first read. One query plus the
+  guards and the group writes.
+- `PermDomainRole.role_labels()`: `{code: label}`.
+- `PermDomainFieldMixin.get_domain()`: the row's `PermDomain`.
+- `PermDomainMemberViewSetMixin` (`permissible.views`): `PUT {id}/roles/`
+  `{"roles": [code]}` (400 on an unknown code; returns the row) and
+  `DELETE {id}/` (removes the held roles, then the row), both
+  `by=request.user`. `RoleLockoutDenied` → 409; escalation stays 403. The
+  member model's global policy needs `roles`; `make_domain_member_policy`
+  is the object side.
+- The member signal handles each domain once per change, not once per group.
+- Known: with `ATOMIC_REQUESTS`, the no-lockout lock is not the request's
+  first read (MySQL only; Postgres is unaffected).
+
 ## 0.11.0
 
 Guards for changing a member's roles on a `PermDomain`; `make_domain_member_policy`
