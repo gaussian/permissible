@@ -11,8 +11,13 @@ from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from guardian.shortcuts import get_perms
+from rest_framework import serializers
+from rest_framework.test import APIRequestFactory, force_authenticate
+from rest_framework.viewsets import ModelViewSet
 
+from permissible.filters import PermissibleFilter
 from permissible.models import (
+    MEMBER_ROLE,
     PermDomain,
     PermDomainRole,
     PermDomainMember,
@@ -20,8 +25,10 @@ from permissible.models import (
     build_role_field,
 )
 from permissible.exceptions import RoleEscalationDenied, RoleLockoutDenied
-from permissible.perm_def import p
+from permissible.perm_def import p, IS_AUTHENTICATED
+from permissible.permissions import PermissiblePerms
 from permissible.policies import make_domain_member_policy
+from permissible.views import PermDomainMemberViewSetMixin
 
 
 # Define domain models
@@ -120,7 +127,26 @@ class TestTeamMember(PermDomainMember):
 
     @classmethod
     def get_policies(cls):
-        return {"object": make_domain_member_policy("team")}
+        return {
+            "global": {a: IS_AUTHENTICATED for a in ("retrieve", "destroy", "roles")},
+            "object": make_domain_member_policy("team"),
+        }
+
+
+class TestTeamMemberSerializer(serializers.ModelSerializer):
+    __test__ = False
+
+    class Meta:
+        model = TestTeamMember
+        fields = ["id", "team", "user"]
+
+
+class TestTeamMemberViewSet(PermDomainMemberViewSetMixin, ModelViewSet):
+    __test__ = False
+    queryset = TestTeamMember.objects.all()
+    serializer_class = TestTeamMemberSerializer
+    permission_classes = [PermissiblePerms]
+    filter_backends = [PermissibleFilter]
 
 
 # Test content model owned by a team
@@ -396,3 +422,135 @@ def test_no_lockout(team, admin_state, owner_roles, target, roles, locked):
     removed = set(domain.get_group_ids_for_roles(roles))
     held = set(users[target].groups.values_list("id", flat=True))
     assert bool(removed & held) is locked
+
+
+# --- `set_roles_for_user` / `get_roles_for_user` / `role_labels` / `MEMBER_ROLE`
+
+
+def test_member_role_constant():
+    assert MEMBER_ROLE == "mem"
+    assert TestTeamRole._meta.get_field("role").default == MEMBER_ROLE
+    assert TestTeamRole.role_labels() == {
+        "mem": "Member",
+        "view": "Viewer",
+        "con": "Contributor",
+        "adm": "Admin",
+        "own": "Owner",
+    }
+
+
+def test_get_roles_for_user(team, django_assert_num_queries):
+    domain, users = team
+    other_team = TestIntegrationTeamModel.objects.create(name="Other")
+    other_team.assign_roles_to_user(users["owner"], ["view"])
+    domain.assign_roles_to_user(users["owner"], ["con"])
+    with django_assert_num_queries(1):
+        assert set(domain.get_roles_for_user(users["owner"])) == {"own", "con"}
+    assert set(domain.get_roles_for_user(users["other"])) == set()
+
+
+@pytest.mark.parametrize(
+    "target, roles, held",
+    [
+        ("owner", ["view"], {"view", "mem"}),  # replaced; "mem" is always kept
+        ("owner", ["own", "view"], {"own", "view", "mem"}),  # unchanged role stays
+        ("owner", [], {"mem"}),
+        ("other", ["con"], {"con", "mem"}),  # a new member
+    ],
+)
+def test_set_roles_for_user(team, target, roles, held):
+    domain, users = team
+    old = TestTeamMember.objects.filter(team=domain, user=users[target]).first()
+    domain.set_roles_for_user(users[target], roles)
+    assert set(domain.get_roles_for_user(users[target])) == held
+    # Added before removed: the row survives with its id (the signal never fires 0 -> 1)
+    row = TestTeamMember.objects.get(team=domain, user=users[target])
+    assert old is None or row.pk == old.pk
+
+
+def test_set_roles_for_user_rejects_unknown_role(team):
+    domain, users = team
+    with pytest.raises(ValueError):
+        domain.set_roles_for_user(users["owner"], ["view", "nope"])
+    assert set(domain.get_roles_for_user(users["owner"])) == {"own"}
+
+
+@pytest.mark.parametrize(
+    "actor, target, roles, exc",
+    [
+        ("owner", "member", ["adm"], None),
+        ("admin", "member", ["adm"], None),
+        ("admin", "owner", ["view"], RoleEscalationDenied),  # may not revoke "own"
+        ("super", "owner", ["view"], RoleLockoutDenied),  # last manager (admin gone)
+    ],
+)
+def test_set_roles_for_user_by(team, actor, target, roles, exc):
+    domain, users = team
+    if exc is RoleLockoutDenied:
+        domain.remove_roles_from_user(users["admin"], None)
+    before = set(domain.get_roles_for_user(users[target]))
+    with expect(exc is None, exc):
+        domain.set_roles_for_user(users[target], roles, by=users[actor])
+    # One transaction: a denied removal also rolls back the additions
+    after = set(domain.get_roles_for_user(users[target]))
+    assert after == ({*roles, "mem"} if exc is None else before)
+
+
+# --- `PermDomainMemberViewSetMixin`
+
+
+def call(actor, method, row, data=None):
+    view = TestTeamMemberViewSet.as_view(
+        {method: "destroy" if data is None else "roles"}
+    )
+    request = getattr(APIRequestFactory(), method)("/", data, format="json")
+    force_authenticate(request, actor)
+    return view(request, pk=row.pk)
+
+
+@pytest.mark.parametrize(
+    "actor, target, roles, status",
+    [
+        ("admin", "member", ["con"], 200),
+        ("admin", "member", ["con", "nope"], 400),
+        ("admin", "member", "con", 400),  # not a list
+        ("admin", "member", None, 400),  # missing
+        ("member", "member", ["con"], 403),  # no change_permission: the policy
+        ("admin", "owner", ["view"], 403),  # escalation
+        ("owner", "owner", ["view"], 409),  # lockout: add another manager first
+    ],
+)
+def test_roles_action(team, actor, target, roles, status):
+    domain, users = team
+    if status == 409:
+        domain.remove_roles_from_user(users["admin"], ["adm"])
+    row = TestTeamMember.objects.get(team=domain, user=users[target])
+    response = call(users[actor], "put", row, {} if roles is None else {"roles": roles})
+    assert response.status_code == status, response.data
+    if status == 200:
+        assert response.data["id"] == row.id
+        assert set(domain.get_roles_for_user(users[target])) == {*roles, "mem"}
+    else:
+        assert users[target] in domain.users.all()
+    if status == 400:
+        assert list(response.data) == ["roles"]
+
+
+@pytest.mark.parametrize(
+    "actor, target, status",
+    [
+        ("admin", "viewer", 204),  # an admin need not be able to revoke "own"
+        ("admin", "owner", 403),  # escalation
+        ("member", "member", 403),  # no change_permission: the policy
+        ("owner", "owner", 409),
+    ],
+)
+def test_destroy(team, actor, target, status):
+    domain, users = team
+    if status == 409:
+        domain.remove_roles_from_user(users["admin"], ["adm"])
+    row = TestTeamMember.objects.get(team=domain, user=users[target])
+    response = call(users[actor], "delete", row)
+    assert response.status_code == status, response.data
+    assert TestTeamMember.objects.filter(pk=row.pk).exists() is (status != 204)
+    assert (users[target] in domain.users.all()) is (status != 204)

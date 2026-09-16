@@ -26,6 +26,10 @@ from .base import AbstractModelMetaclass, BasePermDomain
 
 logger = logging.getLogger(__name__)
 
+# The role every member holds: `build_role_field`'s default, the group the
+# member signal watches, and the role `set_roles_for_user` always keeps.
+MEMBER_ROLE = "mem"
+
 
 class PermDomain(BasePermDomain):
     """
@@ -242,6 +246,41 @@ class PermDomain(BasePermDomain):
             )
             user.groups.remove(*group_ids)
 
+    def get_roles_for_user(self, user: PermissionsMixin) -> models.QuerySet[str]:
+        """The role codes `user` holds on this domain: one query on the role rows."""
+        return (
+            self.get_role_joins()
+            .filter(group__user=user)
+            .values_list("role", flat=True)
+        )
+
+    def set_roles_for_user(
+        self,
+        user: PermissionsMixin,
+        roles: Iterable[str],
+        by: Optional[PermissionsMixin] = None,
+    ):
+        """
+        Replace `user`'s roles on this domain with `roles` plus `MEMBER_ROLE`.
+        Adds before it removes, so `user` never holds zero groups (the member
+        signal would delete their row and re-create it with a new id). Raises
+        `ValueError` for an unknown code. `by`: see `assign_roles_to_user` and
+        `remove_roles_from_user`.
+        """
+        role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
+        wanted = set(roles) | {MEMBER_ROLE}
+        if unknown := wanted - set(role_definitions):
+            raise ValueError(f"Unknown roles {unknown} for {self.__class__}")
+        with transaction.atomic():
+            if by is not None:
+                # The lockout lock must be the transaction's first read
+                list(self.get_role_joins().select_for_update().values_list("pk"))
+            held = set(self.get_roles_for_user(user))
+            if to_add := wanted - held:
+                self.assign_roles_to_user(user, to_add, by=by)
+            if to_remove := held - wanted:
+                self.remove_roles_from_user(user, to_remove, by=by)
+
     @classmethod
     def get_role_join_rel(cls) -> models.ManyToOneRel:
         """
@@ -286,13 +325,13 @@ class PermDomain(BasePermDomain):
         return getattr(self, group_join_attr_name)
 
     def get_member_group_id(self):
-        group_join_obj = self.get_role_joins().filter(role="mem").first()
+        group_join_obj = self.get_role_joins().filter(role=MEMBER_ROLE).first()
         if group_join_obj:
             return group_join_obj.group_id
         return None
 
     async def aget_member_group_id(self):
-        group_join_obj = await self.get_role_joins().filter(role="mem").afirst()
+        group_join_obj = await self.get_role_joins().filter(role=MEMBER_ROLE).afirst()
         if group_join_obj:
             return group_join_obj.group_id
         return None
@@ -328,7 +367,7 @@ def build_role_field(role_definitions):
             for role_value, (role_label, _) in role_definitions.items()
         ),
         max_length=4,
-        default="mem",
+        default=MEMBER_ROLE,
         help_text="This defines the role of the associated Group, allowing "
         "permissions to function more in line with RBAC.",
     )
@@ -374,7 +413,7 @@ class PermDomainRole(
     # 2: default object permissions given to the associated Group (in short form, e.g. "view")
     # NOTE: any child function overriding `ROLE_DEFINITIONS` must redefine `role` like the below
     ROLE_DEFINITIONS: dict[str, tuple[str, list[str]]] = {
-        "mem": ("Member", []),
+        MEMBER_ROLE: ("Member", []),
         "view": ("Viewer", ["view"]),
         "con": ("Contributor", ["view", "add_on", "change_on", "change"]),
         "adm": (
@@ -436,6 +475,11 @@ class PermDomainRole(
         reset_permissions([self])
 
         return super().save(*args, **kwargs)
+
+    @classmethod
+    def role_labels(cls) -> dict[str, str]:
+        """`{code: label}` from `ROLE_DEFINITIONS`, so no consumer hard-codes roles."""
+        return {code: label for code, (label, _) in cls.ROLE_DEFINITIONS.items()}
 
     @classmethod
     def bulk_create_with_groups(cls, role_objs):
