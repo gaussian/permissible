@@ -33,14 +33,24 @@ Guards for changing a member's roles on a `PermDomain`, and a fix to
   caller (the lock needs it). `user.groups.remove()` was already atomic, so this
   adds no visible behaviour.
 
+### Changed
+
+- `make_domain_member_policy()` is reshaped. `retrieve`, `update` and
+  `partial_update` go to the user in the row alone (a member's row is their own
+  config; override for more). `destroy` and a new `roles` action check
+  `change_permission` on the domain: removing a member strips their roles,
+  which is a permission change, not a delete of the domain. The admin branch
+  on `retrieve`/`update`/`partial_update` is dropped; it never worked (see
+  below), so nothing that worked before stops working.
+
 ### Fixed
 
 - `make_domain_member_policy()` never granted an admin. Its `change_permission`
   check followed `"user"`, so it tested `change_permission_user` on the joined
   User: an `AttributeError` when the User model lacks `PermissibleMixin`, a
-  denial otherwise. The `domain_name` argument was unused. It now checks
-  `change_permission` on the domain, so a domain admin passes `destroy` on a
-  member row and a plain member does not.
+  denial otherwise. The `domain_name` argument was unused. `destroy` and
+  `roles` now check `change_permission` on the domain, so a domain admin passes
+  them on a member row and a plain member does not.
 
 ## 0.10.0
 

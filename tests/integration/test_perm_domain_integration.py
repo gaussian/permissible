@@ -321,10 +321,11 @@ class RoleChangeGuardTest(TestCase):
         cls.team.assign_roles_to_user(cls.admin, roles=["adm"])
         cls.team.assign_roles_to_user(cls.member, roles=["mem"])
 
-    def test_member_policy_admin_passes_destroy_member_does_not(self):
+    def test_member_policy_admin_passes_destroy_and_roles_member_does_not(self):
         row = TestTeamMember.objects.get(team=self.team, user=self.member)
-        self.assertTrue(row.has_object_permission(self.admin, "destroy"))
-        self.assertFalse(row.has_object_permission(self.member, "destroy"))
+        for action in ("destroy", "roles"):
+            self.assertTrue(row.has_object_permission(self.admin, action))
+            self.assertFalse(row.has_object_permission(self.member, action))
 
     def test_admin_cannot_grant_or_revoke_role_carrying_delete(self):
         # "adm" lacks "delete"; "own" carries it
