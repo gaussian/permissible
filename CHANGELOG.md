@@ -23,7 +23,7 @@ fixed and reshaped.
     the transaction, so two concurrent demotions cannot both pass. Raises
     `RoleLockoutDenied`.
   - Both subclass `RoleChangeDenied(PermissionDenied)`: DRF answers 403 unless
-    the consumer handles them. All three are exported from `permissible.models`.
+    the consumer handles them. All three live in `permissible.exceptions`.
 - `remove_roles_from_user()` runs in `transaction.atomic()` for every caller;
   `groups.remove()` already was, so nothing visible changes.
 

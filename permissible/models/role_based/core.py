@@ -12,11 +12,11 @@ from typing import Iterable, Optional, Type
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, AbstractBaseUser, PermissionsMixin
-from django.core.exceptions import PermissionDenied
 from django.db import models, transaction
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
+from permissible.exceptions import RoleEscalationDenied, RoleLockoutDenied
 from permissible.models.permissible_mixin import PermissibleMixin
 from permissible.models.utils import reset_permissions
 from permissible.utils.signals import get_subclasses
@@ -24,18 +24,6 @@ from permissible.utils.signals import get_subclasses
 from .base import AbstractModelMetaclass, BasePermDomain
 
 logger = logging.getLogger(__name__)
-
-
-class RoleChangeDenied(PermissionDenied):
-    """Base of the `by=` guards on `assign_roles_to_user` / `remove_roles_from_user`."""
-
-
-class RoleEscalationDenied(RoleChangeDenied):
-    """`by` lacks, on the domain, a permission the role carries."""
-
-
-class RoleLockoutDenied(RoleChangeDenied):
-    """The change would leave no active `change_permission` holder on the domain."""
 
 
 class PermDomain(BasePermDomain):

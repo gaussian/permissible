@@ -17,10 +17,9 @@ from permissible.models import (
     PermDomainRole,
     PermDomainMember,
     PermissibleMixin,
-    RoleEscalationDenied,
-    RoleLockoutDenied,
     build_role_field,
 )
+from permissible.exceptions import RoleEscalationDenied, RoleLockoutDenied
 from permissible.perm_def import p
 from permissible.policies import make_domain_member_policy
 
