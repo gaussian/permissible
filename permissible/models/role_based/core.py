@@ -13,6 +13,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, AbstractBaseUser, PermissionsMixin
 from django.db import models, transaction
+from django.db.models import Exists, OuterRef
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from guardian.shortcuts import get_perms
@@ -25,6 +26,10 @@ from permissible.utils.signals import get_subclasses
 from .base import AbstractModelMetaclass, BasePermDomain
 
 logger = logging.getLogger(__name__)
+
+# The role every member holds: `build_role_field`'s default, the group the
+# member signal watches, and the role `set_roles_for_user` always keeps.
+MEMBER_ROLE = "mem"
 
 
 class PermDomain(BasePermDomain):
@@ -242,6 +247,51 @@ class PermDomain(BasePermDomain):
             )
             user.groups.remove(*group_ids)
 
+    def _role_rows(self, user: PermissionsMixin):
+        """This domain's role rows, annotated with `held`: `user` is in the group."""
+        in_group = user.groups.through.objects.filter(
+            user_id=user.pk, group_id=OuterRef("group_id")
+        )
+        return self.get_role_joins().annotate(held=Exists(in_group))
+
+    def get_roles_for_user(self, user: PermissionsMixin) -> models.QuerySet[str]:
+        """The role codes `user` holds on this domain: one query on the role rows."""
+        return self._role_rows(user).filter(held=True).values_list("role", flat=True)
+
+    def set_roles_for_user(
+        self,
+        user: PermissionsMixin,
+        roles: Iterable[str],
+        by: Optional[PermissionsMixin] = None,
+    ):
+        """
+        Replace `user`'s roles on this domain with `roles` + `MEMBER_ROLE`. Adds
+        before it removes: at zero groups the member signal deletes the row and
+        re-creates it with a new id. Unknown code: `ValueError`. `by`: the guards
+        of `assign_roles_to_user` / `remove_roles_from_user`, in one transaction.
+        """
+        wanted = set(roles) | {MEMBER_ROLE}
+        with transaction.atomic():
+            # One query: group ids, what `user` holds and, with `by`, the lock as
+            # the transaction's first read (see `_check_no_lockout`), in a fixed
+            # order so two of these cannot deadlock
+            rows = self._role_rows(user).order_by("pk")
+            if by is not None:
+                rows = rows.select_for_update()
+            rows = list(rows.values_list("role", "group_id", "held"))
+            group_ids = {role: group_id for role, group_id, _ in rows}
+            if unknown := wanted - group_ids.keys():
+                raise ValueError(f"Unknown roles {unknown} for {self.__class__}")
+            held = {role for role, _, is_held in rows if is_held}
+            to_add, to_remove = wanted - held, held - wanted
+            if by is not None and (changes := to_add | to_remove):
+                if to_remove:
+                    self._check_no_lockout(user, to_remove)
+                self.check_role_change(by, changes)
+            logger.debug("Setting roles for user %s: +%s -%s", user, to_add, to_remove)
+            user.groups.add(*[group_ids[role] for role in to_add])
+            user.groups.remove(*[group_ids[role] for role in to_remove])
+
     @classmethod
     def get_role_join_rel(cls) -> models.ManyToOneRel:
         """
@@ -286,13 +336,13 @@ class PermDomain(BasePermDomain):
         return getattr(self, group_join_attr_name)
 
     def get_member_group_id(self):
-        group_join_obj = self.get_role_joins().filter(role="mem").first()
+        group_join_obj = self.get_role_joins().filter(role=MEMBER_ROLE).first()
         if group_join_obj:
             return group_join_obj.group_id
         return None
 
     async def aget_member_group_id(self):
-        group_join_obj = await self.get_role_joins().filter(role="mem").afirst()
+        group_join_obj = await self.get_role_joins().filter(role=MEMBER_ROLE).afirst()
         if group_join_obj:
             return group_join_obj.group_id
         return None
@@ -320,6 +370,9 @@ class PermDomainFieldMixin(object):
 
         return domain_fields[0]
 
+    def get_domain(self) -> PermDomain:
+        return getattr(self, self.get_domain_field().name)
+
 
 def build_role_field(role_definitions):
     return models.CharField(
@@ -328,7 +381,7 @@ def build_role_field(role_definitions):
             for role_value, (role_label, _) in role_definitions.items()
         ),
         max_length=4,
-        default="mem",
+        default=MEMBER_ROLE,
         help_text="This defines the role of the associated Group, allowing "
         "permissions to function more in line with RBAC.",
     )
@@ -374,7 +427,7 @@ class PermDomainRole(
     # 2: default object permissions given to the associated Group (in short form, e.g. "view")
     # NOTE: any child function overriding `ROLE_DEFINITIONS` must redefine `role` like the below
     ROLE_DEFINITIONS: dict[str, tuple[str, list[str]]] = {
-        "mem": ("Member", []),
+        MEMBER_ROLE: ("Member", []),
         "view": ("Viewer", ["view"]),
         "con": ("Contributor", ["view", "add_on", "change_on", "change"]),
         "adm": (
@@ -436,6 +489,11 @@ class PermDomainRole(
         reset_permissions([self])
 
         return super().save(*args, **kwargs)
+
+    @classmethod
+    def role_labels(cls) -> dict[str, str]:
+        """`{code: label}` from `ROLE_DEFINITIONS`."""
+        return {code: label for code, (label, _) in cls.ROLE_DEFINITIONS.items()}
 
     @classmethod
     def bulk_create_with_groups(cls, role_objs):
@@ -506,6 +564,4 @@ class PermDomainMember(
         abstract = True
 
     def __str__(self):
-        domain_field = self.get_domain_field()
-        domain_obj = getattr(self, domain_field.name)
-        return f"{domain_obj} / {self.user}"
+        return f"{self.get_domain()} / {self.user}"

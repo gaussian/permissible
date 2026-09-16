@@ -66,9 +66,11 @@ def post_group_membership_changed(sender, action, instance, model, pk_set, **kwa
         domain_member_model_class = (
             domain_role_model_class.get_domain_member_model_class()
         )
-        domain_ids = domain_role_model_class.objects.filter(
-            group_id__in=pk_set
-        ).values_list(domain_id_field_name, flat=True)
+        domain_ids = (
+            domain_role_model_class.objects.filter(group_id__in=pk_set)
+            .values_list(domain_id_field_name, flat=True)
+            .distinct()
+        )
 
         # Manage the individual PermDomainMember record for this user and this PermDomain
         for domain_id in domain_ids:
