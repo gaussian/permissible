@@ -11,3 +11,9 @@ class RoleEscalationDenied(RoleChangeDenied):
 
 class RoleLockoutDenied(RoleChangeDenied):
     """The change would leave no active `change_permission` holder on the domain."""
+
+
+class RoleGrantRefused(Exception):
+    """A `m2m_changed` receiver on `Group.user_set` vetoed a grant; a subclass sets `code`."""
+
+    code = "grant_refused"
