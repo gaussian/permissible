@@ -273,8 +273,10 @@ class PermDomain(BasePermDomain):
             raise ValueError(f"Unknown roles {unknown} for {self.__class__}")
         with transaction.atomic():
             if by is not None:
-                # The lockout lock must be the transaction's first read
-                list(self.get_role_joins().select_for_update().values_list("pk"))
+                # The lockout lock must be the transaction's first read; a fixed
+                # lock order (pk) keeps two such transactions from deadlocking
+                rows = self.get_role_joins().select_for_update().order_by("pk")
+                list(rows.values_list("pk"))
             held = set(self.get_roles_for_user(user))
             if to_add := wanted - held:
                 self.assign_roles_to_user(user, to_add, by=by)
