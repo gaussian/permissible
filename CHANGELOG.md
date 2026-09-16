@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.1
+
+- Fix: import cycle that broke every consumer at import in 0.12.0.
+  `CheckViewConfigMixin` moved to `permissible.utils.views`.
+
 ## 0.12.0
 
 The member-roles endpoint and its helpers, from `neutron`.
