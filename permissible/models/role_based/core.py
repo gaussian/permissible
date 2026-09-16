@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class RoleChangeDenied(PermissionDenied):
-    """Base for the guards on `assign_roles_to_user` / `remove_roles_from_user`."""
+    """Base of the `by=` guards on `assign_roles_to_user` / `remove_roles_from_user`."""
 
 
 class RoleEscalationDenied(RoleChangeDenied):
@@ -35,7 +35,7 @@ class RoleEscalationDenied(RoleChangeDenied):
 
 
 class RoleLockoutDenied(RoleChangeDenied):
-    """The change would leave the domain with no active `change_permission` holder."""
+    """The change would leave no active `change_permission` holder on the domain."""
 
 
 class PermDomain(BasePermDomain):
@@ -151,15 +151,11 @@ class PermDomain(BasePermDomain):
 
     def check_role_change(self, by: PermissionsMixin, roles: Optional[list[str]]):
         """
-        Rule A (no escalation): `by` may grant or revoke a role only if they hold,
-        on this domain, every permission that role carries per `ROLE_DEFINITIONS`.
-        Roles are compared by the permissions they carry, never by code. A role
-        carrying no permissions may be granted by anyone; superusers pass via
-        `has_perms`. Raises `RoleEscalationDenied`.
-
-        This bounds WHICH roles `by` may touch. Whether `by` may change roles at
-        all is still `change_permission` on the domain: gate that at the caller
-        (see `make_domain_member_policy`).
+        No escalation: `by` must hold, on this domain, every permission each role
+        carries (`ROLE_DEFINITIONS`); role codes are never compared. `has_perms`
+        passes superusers and an empty list, so a role carrying nothing is open
+        to all. This bounds WHICH roles `by` may touch; whether `by` may change
+        roles at all is `change_permission` on the domain, gated by the caller.
         """
         role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
         for role in role_definitions if roles is None else roles:
@@ -173,14 +169,10 @@ class PermDomain(BasePermDomain):
 
     def _check_no_lockout(self, user: PermissionsMixin, roles: Optional[list[str]]):
         """
-        Rule B (no lockout): removing `roles` from `user` must not take the
-        domain from one active `change_permission` holder to none. Raises
-        `RoleLockoutDenied`.
-
-        Must run inside a transaction, as its FIRST read: the domain's role rows
-        are locked so two concurrent demotions cannot both pass. A non-locking
-        read before the lock would pin the snapshot on REPEATABLE READ backends
-        (MySQL) and the count after the lock would not see the other commit.
+        No lockout: removing `roles` from `user` may not take the domain from one
+        active `change_permission` holder to none (1 -> 0 only). Locks the
+        domain's role rows, so it must be the first read of the transaction: an
+        earlier read pins the snapshot on REPEATABLE READ backends.
         """
         role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
         manager_roles = [
@@ -196,13 +188,11 @@ class PermDomain(BasePermDomain):
         )
         kept_group_ids = manager_group_ids - set(self.get_group_ids_for_roles(roles))
         active_managers = get_user_model().objects.filter(is_active=True)
-        # Any active manager left after the change: another user, or `user`
-        # via a manager role that is not being removed.
+        # Managers after the change: anyone else, or `user` via a role that stays
         managers_after = active_managers.filter(
             models.Q(groups__in=kept_group_ids)
             | models.Q(groups__in=manager_group_ids) & ~models.Q(pk=user.pk)
         )
-        # Fires only on 1 -> 0: `user` must be an active manager now.
         if (
             not managers_after.exists()
             and active_managers.filter(
@@ -220,10 +210,7 @@ class PermDomain(BasePermDomain):
         roles: Optional[list[str]],
         by: Optional[PermissionsMixin] = None,
     ):
-        """
-        Add `user` to the groups for `roles` (all roles if None). Pass `by` to
-        guard the change: see `check_role_change`.
-        """
+        """Add `user` to the groups for `roles` (None: all). `by` enables `check_role_change`."""
         if by is not None:
             self.check_role_change(by, roles)
         group_ids = self.get_group_ids_for_roles(roles=roles)
@@ -242,12 +229,12 @@ class PermDomain(BasePermDomain):
         by: Optional[PermissionsMixin] = None,
     ):
         """
-        Remove `user` from the groups for `roles` (all roles if None). Pass `by`
-        to guard the change: see `check_role_change` and `_check_no_lockout`.
+        Remove `user` from the groups for `roles` (None: all). `by` enables
+        `_check_no_lockout` (first: it takes the lock) and `check_role_change`.
         """
         with transaction.atomic():
             if by is not None:
-                self._check_no_lockout(user, roles)  # first: it takes the lock
+                self._check_no_lockout(user, roles)
                 self.check_role_change(by, roles)
             group_ids = self.get_group_ids_for_roles(roles=roles)
             logger.debug(
