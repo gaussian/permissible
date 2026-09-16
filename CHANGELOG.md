@@ -2,13 +2,8 @@
 
 ## 0.12.1
 
-- Fix: 0.12.0 failed at import for every consumer whose DRF defaults name
-  `permissible.permissions.PermissiblePerms` / `permissible.filters.PermissibleFilter`.
-  `permissible.views` imports `rest_framework.decorators` → `rest_framework.views`,
-  which resolves those defaults, and both modules imported `CheckViewConfigMixin`
-  from `permissible.views`: a cycle. `CheckViewConfigMixin` now lives in
-  `permissible.utils.views`; `permissible.views` is only imported by a consumer's
-  viewset. A test boots DRF with those defaults and then imports `permissible.views`.
+- Fix: import cycle that broke every consumer at import in 0.12.0.
+  `CheckViewConfigMixin` moved to `permissible.utils.views`.
 
 ## 0.12.0
 

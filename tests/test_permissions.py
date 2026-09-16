@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 from django.http import Http404
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.filters import OrderingFilter
 
 from permissible.permissions import PermissiblePerms
 from permissible.utils.views import make_context_from_request
@@ -341,9 +342,9 @@ class TestPermissiblePerms(unittest.TestCase):
     def test_check_view_config_failure(self):
         # Test that _check_view_config fails with incorrectly configured view
         view = DummyView()
-        # Instead of just setting _permissible_filter=False,
-        # completely remove the filter_backends attribute which will definitely fail the check
-        view.filter_backends = []
+        # A backend that is not PermissibleFilter. An empty list would fall
+        # back to the defaults, which name PermissibleFilter.
+        view.filter_backends = [OrderingFilter]
         perms = self.get_permission_instance()
 
         # Should raise an exception

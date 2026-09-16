@@ -84,3 +84,9 @@ AUTHENTICATION_BACKENDS = (
     "django.contrib.auth.backends.ModelBackend",
     "guardian.backends.ObjectPermissionBackend",
 )
+
+# Mirror a consumer: permissible's classes as DRF's defaults.
+REST_FRAMEWORK = {
+    "DEFAULT_PERMISSION_CLASSES": ["permissible.permissions.PermissiblePerms"],
+    "DEFAULT_FILTER_BACKENDS": ["permissible.filters.PermissibleFilter"],
+}
