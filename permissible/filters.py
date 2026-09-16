@@ -6,8 +6,7 @@ Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 from rest_framework import filters
 
 from permissible.models.permissible_mixin import PermissibleMixin
-from permissible.utils.views import make_context_from_request
-from permissible.views import CheckViewConfigMixin
+from permissible.utils.views import CheckViewConfigMixin, make_context_from_request
 
 
 class PermissibleFilter(CheckViewConfigMixin, filters.BaseFilterBackend):
