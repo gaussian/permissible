@@ -13,6 +13,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, AbstractBaseUser, PermissionsMixin
 from django.db import models, transaction
+from django.db.models import Exists, OuterRef
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from guardian.shortcuts import get_perms
@@ -246,13 +247,16 @@ class PermDomain(BasePermDomain):
             )
             user.groups.remove(*group_ids)
 
+    def _role_rows(self, user: PermissionsMixin):
+        """This domain's role rows, annotated with `held`: `user` is in the group."""
+        in_group = user.groups.through.objects.filter(
+            user_id=user.pk, group_id=OuterRef("group_id")
+        )
+        return self.get_role_joins().annotate(held=Exists(in_group))
+
     def get_roles_for_user(self, user: PermissionsMixin) -> models.QuerySet[str]:
         """The role codes `user` holds on this domain: one query on the role rows."""
-        return (
-            self.get_role_joins()
-            .filter(group__user=user)
-            .values_list("role", flat=True)
-        )
+        return self._role_rows(user).filter(held=True).values_list("role", flat=True)
 
     def set_roles_for_user(
         self,
@@ -266,21 +270,27 @@ class PermDomain(BasePermDomain):
         re-creates it with a new id. Unknown code: `ValueError`. `by`: the guards
         of `assign_roles_to_user` / `remove_roles_from_user`, in one transaction.
         """
-        role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
         wanted = set(roles) | {MEMBER_ROLE}
-        if unknown := wanted - set(role_definitions):
-            raise ValueError(f"Unknown roles {unknown} for {self.__class__}")
         with transaction.atomic():
+            # One query: group ids, what `user` holds and, with `by`, the lock as
+            # the transaction's first read (see `_check_no_lockout`), in a fixed
+            # order so two of these cannot deadlock
+            rows = self._role_rows(user).order_by("pk")
             if by is not None:
-                # First read of the transaction (see `_check_no_lockout`), in a
-                # fixed order so two of these cannot deadlock
-                rows = self.get_role_joins().select_for_update().order_by("pk")
-                list(rows.values_list("pk"))
-            held = set(self.get_roles_for_user(user))
-            if to_add := wanted - held:
-                self.assign_roles_to_user(user, to_add, by=by)
-            if to_remove := held - wanted:
-                self.remove_roles_from_user(user, to_remove, by=by)
+                rows = rows.select_for_update()
+            rows = list(rows.values_list("role", "group_id", "held"))
+            group_ids = {role: group_id for role, group_id, _ in rows}
+            if unknown := wanted - group_ids.keys():
+                raise ValueError(f"Unknown roles {unknown} for {self.__class__}")
+            held = {role for role, _, is_held in rows if is_held}
+            to_add, to_remove = wanted - held, held - wanted
+            if by is not None and (changes := to_add | to_remove):
+                if to_remove:
+                    self._check_no_lockout(user, to_remove)
+                self.check_role_change(by, changes)
+            logger.debug("Setting roles for user %s: +%s -%s", user, to_add, to_remove)
+            user.groups.add(*[group_ids[role] for role in to_add])
+            user.groups.remove(*[group_ids[role] for role in to_remove])
 
     @classmethod
     def get_role_join_rel(cls) -> models.ManyToOneRel:
