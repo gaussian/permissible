@@ -19,8 +19,8 @@ class PermDomainMemberViewSetMixin:
 
     - `PUT {id}/roles/` `{"roles": [code]}`: 400 (keyed "roles") for a code not
       in `ROLE_DEFINITIONS`; `set_roles_for_user(by=request.user)`; returns the row.
-    - `DELETE {id}/`: `remove_roles_from_user(<held roles>, by=request.user)`,
-      then the row. Held, not None: `by` need not be able to revoke every role.
+    - `DELETE {id}/`: `remove_roles_from_user(None, by=request.user)` (guarded
+      on the held roles only), then the row.
     - `RoleLockoutDenied` -> 409 ("add another manager first"); escalation stays 403.
     - `RoleGrantRefused` -> 409 `{"code": exc.code, "detail": str(exc)}`.
     """
@@ -42,8 +42,7 @@ class PermDomainMemberViewSetMixin:
 
     def perform_destroy(self, instance):
         domain = instance.get_domain()
-        held = set(domain.get_roles_for_user(instance.user))
-        domain.remove_roles_from_user(instance.user, held, by=self.request.user)
+        domain.remove_roles_from_user(instance.user, None, by=self.request.user)
         super().perform_destroy(instance)
 
     def handle_exception(self, exc):

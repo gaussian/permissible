@@ -112,17 +112,8 @@ class PermDomainTests(TestCase):
             patch("guardian.shortcuts.remove_perm"),
             patch("guardian.shortcuts.get_group_perms", return_value=set()),
         ):
-            domain = DummyDomain.objects.create(name=name)
-
-            # Create mock role groups directly
-            role_choices = list(DummyDomainRole._meta.get_field("role").choices)
-            for role, _ in role_choices:
-                group = Group.objects.create(name=f"Test {role}")
-                DummyDomainRole.objects.create(
-                    role=role, group=group, dummydomain=domain
-                )
-
-            return domain
+            # `save` creates one role row (and group) per role
+            return DummyDomain.objects.create(name=name)
 
     @patch("permissible.models.role_based.core.reset_permissions")
     def test_reset_domain_roles_creates_groups(self, mock_reset_permissions):

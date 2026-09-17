@@ -386,15 +386,29 @@ def test_no_escalation(team, actor, role, allowed):
     with expect(allowed, RoleEscalationDenied):
         domain.assign_roles_to_user(target, [role], by=by)
     assert (target in domain.users.all()) is allowed
+    domain.assign_roles_to_user(target, [role])  # held: the guard checks the delta
     with expect(allowed, RoleEscalationDenied):
         domain.remove_roles_from_user(target, [role], by=by)
-    assert target not in domain.users.all()
+    assert (target not in domain.users.all()) is allowed
+
+
+def test_guards_check_only_the_delta(team):
+    """An unchanged role, or an empty list, needs no permission from `by`."""
+    domain, users = team
+    domain.assign_roles_to_user(users["owner"], ["own"], by=users["admin"])
+    domain.remove_roles_from_user(users["other"], ["own"], by=users["admin"])
+    domain.assign_roles_to_user(users["other"], [], by=users["member"])
+    domain.remove_roles_from_user(users["owner"], [], by=users["member"])
+    assert set(domain.get_roles_for_user(users["owner"])) == {"own"}
+    assert users["other"] not in domain.users.all()
 
 
 def test_unknown_role_code_is_rejected(team):
     domain, users = team
     with pytest.raises(ValueError):
         domain.assign_roles_to_user(users["other"], ["nope"], by=users["owner"])
+    with pytest.raises(ValueError):
+        domain.remove_roles_from_user(users["other"], ["nope"])
 
 
 @pytest.mark.parametrize(
@@ -524,12 +538,12 @@ def no_seats(team):
         ("viewer", True, {"view", "mem"}),  # keeps what they held
     ],
 )
-def test_set_roles_for_user_refused(
+def test_assign_roles_to_user_refused(
     team, no_seats, caplog, target, member_if_refused, held
 ):
     domain, users = team
     with expect(member_if_refused, SeatRefused):
-        domain.set_roles_for_user(
+        domain.assign_roles_to_user(
             users[target], ["own", "view"], member_if_refused=member_if_refused
         )
     assert set(domain.get_roles_for_user(users[target])) == held
