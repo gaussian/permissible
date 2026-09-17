@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.3
+
+One read path (`_read_roles`) and one write path (`_change_roles`) under
+`assign_roles_to_user` / `remove_roles_from_user` / `set_roles_for_user`.
+
+- With `by=`, the verbs guard only the roles that change; `assign` locks the
+  role rows too. An unknown code raises `ValueError` on all three.
+- `member_if_refused` moves from `set_roles_for_user` to `assign_roles_to_user`.
+- `PermDomainMemberViewSetMixin.perform_destroy` passes `None`: one query fewer.
+
 ## 0.12.2
 
 Refusable grants, from `neutron`'s invite-apply and SSO-provisioning paths.
