@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.0
+## 0.12.3
 
 One read path (`_read_roles`) and one write path (`_change_roles`) under
 `assign_roles_to_user` / `remove_roles_from_user` / `set_roles_for_user`.
