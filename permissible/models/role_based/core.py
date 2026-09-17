@@ -174,8 +174,7 @@ class PermDomain(BasePermDomain):
         """
         No lockout: removing `roles` from `user` may not take the domain from one
         active `change_permission` holder to none (1 -> 0 only). Locks the
-        domain's role rows, so it must be the first read of the transaction: an
-        earlier read pins the snapshot on REPEATABLE READ backends.
+        domain's manager role rows; `_read_roles(lock=True)` locked them all first.
         """
         role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
         manager_roles = [
@@ -207,46 +206,77 @@ class PermDomain(BasePermDomain):
                 f"removing their role"
             )
 
+    def _read_roles(self, user: PermissionsMixin, lock: bool):
+        """One query: {role: group_id} and the roles `user` holds; locked in pk order."""
+        rows = self._role_rows(user).order_by("pk")
+        if lock:
+            rows = rows.select_for_update()
+        rows = list(rows.values_list("role", "group_id", "held"))
+        return {r: g for r, g, _ in rows}, {r for r, _, h in rows if h}
+
+    def _change_roles(
+        self,
+        user: PermissionsMixin,
+        group_ids: dict[str, int],
+        to_add: set[str],
+        to_remove: set[str],
+        by: Optional[PermissionsMixin],
+        member_if_refused: bool,
+    ):
+        """
+        The one write path. Guards on the delta; adds before it removes, so the
+        member signal never sees zero groups (it would delete and re-create the row).
+        """
+        if unknown := (to_add | to_remove) - group_ids.keys():
+            raise ValueError(f"Unknown roles {unknown} for {self.__class__}")
+        if by is not None and (to_add or to_remove):
+            if to_remove:
+                self._check_no_lockout(user, to_remove)
+            self.check_role_change(by, to_add | to_remove)
+        logger.debug("Changing roles of user %s: +%s -%s", user, to_add, to_remove)
+        try:
+            with transaction.atomic():  # a refusal must not poison the outer
+                user.groups.add(*[group_ids[r] for r in to_add])
+        except RoleGrantRefused if member_if_refused else () as exc:
+            logger.error("%s; %s gets %s only on %s", exc, user, MEMBER_ROLE, self)
+            user.groups.add(group_ids[MEMBER_ROLE])
+        user.groups.remove(*[group_ids[r] for r in to_remove])
+
     def assign_roles_to_user(
         self,
         user: PermissionsMixin,
-        roles: Optional[list[str]],
+        roles: Optional[Iterable[str]],
         by: Optional[PermissionsMixin] = None,
+        member_if_refused: bool = False,
     ):
-        """Add `user` to the groups for `roles` (None: all). `by` enables `check_role_change`."""
-        if by is not None:
-            self.check_role_change(by, roles)
-        group_ids = self.get_group_ids_for_roles(roles=roles)
-        logger.debug(
-            "Assigning roles to user %s: groups=%s, roles=%s",
-            user,
-            list(group_ids),
-            roles,
-        )
-        user.groups.add(*group_ids)
+        """
+        Add `user` to the groups for `roles` (None: all). Unknown code: `ValueError`.
+        `by` enables `check_role_change` on the roles `user` does not hold yet.
+        `member_if_refused`: log a receiver's `RoleGrantRefused`; add `MEMBER_ROLE` only.
+        """
+        with transaction.atomic():
+            group_ids, held = self._read_roles(user, lock=by is not None)
+            wanted = set(group_ids if roles is None else roles)
+            self._change_roles(
+                user, group_ids, wanted - held, set(), by, member_if_refused
+            )
 
     def remove_roles_from_user(
         self,
         user: PermissionsMixin,
-        roles: Optional[list[str]],
+        roles: Optional[Iterable[str]],
         by: Optional[PermissionsMixin] = None,
     ):
         """
         Remove `user` from the groups for `roles` (None: all). `by` enables
-        `_check_no_lockout` (first: it takes the lock) and `check_role_change`.
+        `_check_no_lockout` and `check_role_change` on the roles `user` holds.
         """
         with transaction.atomic():
-            if by is not None:
-                self._check_no_lockout(user, roles)
-                self.check_role_change(by, roles)
-            group_ids = self.get_group_ids_for_roles(roles=roles)
-            logger.debug(
-                "Removing roles from user %s: groups=%s, roles=%s",
-                user,
-                list(group_ids),
-                roles,
-            )
-            user.groups.remove(*group_ids)
+            group_ids, held = self._read_roles(user, lock=by is not None)
+            unwanted = set(group_ids if roles is None else roles)
+            # An unknown code stays in, so `_change_roles` rejects it as in `assign`
+            to_remove = (unwanted & held) | (unwanted - group_ids.keys())
+            self._change_roles(user, group_ids, set(), to_remove, by, False)
 
     def _role_rows(self, user: PermissionsMixin):
         """This domain's role rows, annotated with `held`: `user` is in the group."""
@@ -264,43 +294,16 @@ class PermDomain(BasePermDomain):
         user: PermissionsMixin,
         roles: Iterable[str],
         by: Optional[PermissionsMixin] = None,
-        member_if_refused: bool = False,
     ):
         """
-        Replace `user`'s roles on this domain with `roles` + `MEMBER_ROLE`. Adds
-        before it removes: at zero groups the member signal deletes the row and
-        re-creates it with a new id. Unknown code: `ValueError`. `by`: the guards
-        of `assign_roles_to_user` / `remove_roles_from_user`, in one transaction.
-        `member_if_refused`: log a receiver's `RoleGrantRefused`; keep held + `MEMBER_ROLE`.
+        Replace `user`'s roles on this domain with `roles` + `MEMBER_ROLE`. Unknown
+        code: `ValueError`. `by`: the guards of `assign_roles_to_user` /
+        `remove_roles_from_user`, on the delta, in one transaction.
         """
-        wanted = set(roles) | {MEMBER_ROLE}
         with transaction.atomic():
-            # One query: group ids, what `user` holds and, with `by`, the lock as
-            # the transaction's first read (see `_check_no_lockout`), in a fixed
-            # order so two of these cannot deadlock
-            rows = self._role_rows(user).order_by("pk")
-            if by is not None:
-                rows = rows.select_for_update()
-            rows = list(rows.values_list("role", "group_id", "held"))
-            group_ids = {role: group_id for role, group_id, _ in rows}
-            if unknown := wanted - group_ids.keys():
-                raise ValueError(f"Unknown roles {unknown} for {self.__class__}")
-            held = {role for role, _, is_held in rows if is_held}
-            to_add, to_remove = wanted - held, held - wanted
-            if by is not None and (changes := to_add | to_remove):
-                if to_remove:
-                    self._check_no_lockout(user, to_remove)
-                self.check_role_change(by, changes)
-            logger.debug("Setting roles for user %s: +%s -%s", user, to_add, to_remove)
-            try:
-                with transaction.atomic():  # a refusal must not poison the outer
-                    user.groups.add(*[group_ids[role] for role in to_add])
-            except RoleGrantRefused if member_if_refused else () as exc:
-                logger.error(
-                    "%s; %s keeps %s + %s on %s", exc, user, held, MEMBER_ROLE, self
-                )
-                return self.set_roles_for_user(user, held, by=by)
-            user.groups.remove(*[group_ids[role] for role in to_remove])
+            group_ids, held = self._read_roles(user, lock=by is not None)
+            wanted = set(roles) | {MEMBER_ROLE}
+            self._change_roles(user, group_ids, wanted - held, held - wanted, by, False)
 
     @classmethod
     def get_role_join_rel(cls) -> models.ManyToOneRel:
