@@ -170,25 +170,21 @@ class PermDomain(BasePermDomain):
                 f"{by} may not grant or revoke {roles} on {self}"
             )
 
-    def _check_no_lockout(self, user: PermissionsMixin, roles: Optional[list[str]]):
+    def _check_no_lockout(
+        self, user: PermissionsMixin, group_ids: dict[str, int], to_remove: set[str]
+    ):
         """
-        No lockout: removing `roles` from `user` may not take the domain from one
-        active `change_permission` holder to none (1 -> 0 only). Locks the
-        domain's manager role rows; `_read_roles(lock=True)` locked them all first.
+        No lockout: removing `to_remove` from `user` may not take the domain from
+        one active `change_permission` holder to none (1 -> 0 only). Runs under
+        `_read_roles`'s row lock.
         """
         role_definitions = self.get_role_join_rel().related_model.ROLE_DEFINITIONS
-        manager_roles = [
-            role
+        manager_group_ids = {
+            group_ids[role]
             for role, (_, short_perm_codes) in role_definitions.items()
-            if "change_permission" in short_perm_codes
-        ]
-        manager_group_ids = set(
-            self.get_role_joins()
-            .select_for_update()
-            .filter(role__in=manager_roles)
-            .values_list("group_id", flat=True)
-        )
-        kept_group_ids = manager_group_ids - set(self.get_group_ids_for_roles(roles))
+            if "change_permission" in short_perm_codes and role in group_ids
+        }
+        kept_group_ids = manager_group_ids - {group_ids[r] for r in to_remove}
         active_managers = get_user_model().objects.filter(is_active=True)
         # Managers after the change: anyone else, or `user` via a role that stays
         managers_after = active_managers.filter(
@@ -231,11 +227,13 @@ class PermDomain(BasePermDomain):
             raise ValueError(f"Unknown roles {unknown} for {self.__class__}")
         if by is not None and (to_add or to_remove):
             if to_remove:
-                self._check_no_lockout(user, to_remove)
+                self._check_no_lockout(user, group_ids, to_remove)
             self.check_role_change(by, to_add | to_remove)
         logger.debug("Changing roles of user %s: +%s -%s", user, to_add, to_remove)
         try:
-            with transaction.atomic():  # a refusal must not poison the outer
+            with transaction.atomic(
+                savepoint=member_if_refused
+            ):  # a refusal must not poison the outer
                 user.groups.add(*[group_ids[r] for r in to_add])
         except RoleGrantRefused if member_if_refused else () as exc:
             logger.error("%s; %s gets %s only on %s", exc, user, MEMBER_ROLE, self)
