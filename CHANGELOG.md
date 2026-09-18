@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.4
+
+- `RoleGrantRefused(*args, fields=None)`: a subclass passes extra keys for the
+  409 body. `PermDomainMemberViewSetMixin` returns
+  `{"code", "detail", **exc.fields}`. From `neutron`'s settings UI, which
+  needs structured fields, not prose.
+
 ## 0.12.3
 
 One read path (`_read_roles`) and one write path (`_change_roles`) under

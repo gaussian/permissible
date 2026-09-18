@@ -22,7 +22,7 @@ class PermDomainMemberViewSetMixin:
     - `DELETE {id}/`: `remove_roles_from_user(None, by=request.user)` (guarded
       on the held roles only), then the row.
     - `RoleLockoutDenied` -> 409 ("add another manager first"); escalation stays 403.
-    - `RoleGrantRefused` -> 409 `{"code": exc.code, "detail": str(exc)}`.
+    - `RoleGrantRefused` -> 409 `{"code": exc.code, "detail": str(exc), **exc.fields}`.
     """
 
     @action(detail=True, methods=["put"])
@@ -47,7 +47,7 @@ class PermDomainMemberViewSetMixin:
 
     def handle_exception(self, exc):
         if isinstance(exc, RoleGrantRefused):
-            exc = APIException({"code": exc.code, "detail": str(exc)})
+            exc = APIException({"code": exc.code, "detail": str(exc), **exc.fields})
             exc.status_code = status.HTTP_409_CONFLICT
         elif isinstance(exc, RoleLockoutDenied):
             exc = APIException(str(exc), code="lockout")
