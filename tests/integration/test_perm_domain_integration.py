@@ -523,7 +523,7 @@ def no_seats(team):
 
     def refuse(action, pk_set, **kwargs):
         if action == "post_add" and own in pk_set:
-            raise SeatRefused("No seats left")
+            raise SeatRefused("No seats left", fields={"plans": ["pro"]})
 
     m2m_changed.connect(refuse, sender=Group.user_set.through)
     yield
@@ -594,7 +594,12 @@ def test_roles_action(team, actor, target, roles, status):
 def test_roles_action_refused(team, no_seats):
     response, _ = call(team, "owner", "member", {"roles": ["own"]})
     assert response.status_code == 409, response.data
-    assert response.data == {"code": "seat_refused", "detail": "No seats left"}
+    assert response.data == {
+        "code": "seat_refused",
+        "detail": "No seats left",
+        "plans": ["pro"],
+    }
+    assert RoleGrantRefused("x").fields == {}
 
 
 @pytest.mark.parametrize(

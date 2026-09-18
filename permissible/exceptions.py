@@ -17,3 +17,7 @@ class RoleGrantRefused(Exception):
     """A `m2m_changed` receiver on `Group.user_set` vetoed a grant; a subclass sets `code`."""
 
     code = "grant_refused"
+
+    def __init__(self, *args, fields: dict | None = None):
+        super().__init__(*args)
+        self.fields = fields or {}  # extra keys for the 409 body
