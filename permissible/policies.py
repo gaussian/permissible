@@ -132,7 +132,7 @@ def make_domain_owned_policy(domain_attr_path: str):
 
 
 # POLICY MAKER: Creates a policy for a DomainMember object. A member's row is
-# their own config; "destroy" and "roles" need "change_permission" on the domain.
+# their own config; "roles" (join/leave) needs "change_permission" on the domain.
 def make_domain_member_policy(domain_name: str):
     perm_def_self = p(
         [],
@@ -143,7 +143,5 @@ def make_domain_member_policy(domain_name: str):
         "retrieve": perm_def_self,
         "update": perm_def_self,
         "partial_update": perm_def_self,
-        # Removing a member strips their roles: a permission change, not a delete
-        "destroy": p(["change_permission"], domain_name),
         "roles": p(["change_permission"], domain_name),
     }

@@ -12,9 +12,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db.models.signals import m2m_changed
 from guardian.shortcuts import get_perms
-from rest_framework import serializers
+from rest_framework import mixins, serializers
 from rest_framework.test import APIRequestFactory, force_authenticate
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.viewsets import GenericViewSet
 
 from permissible.filters import PermissibleFilter
 from permissible.models import (
@@ -130,7 +130,7 @@ class TestTeamMember(PermDomainMember):
     @classmethod
     def get_policies(cls):
         return {
-            "global": {a: IS_AUTHENTICATED for a in ("retrieve", "destroy", "roles")},
+            "global": {a: IS_AUTHENTICATED for a in ("retrieve", "roles")},
             "object": make_domain_member_policy("team"),
         }
 
@@ -143,7 +143,13 @@ class TestTeamMemberSerializer(serializers.ModelSerializer):
         fields = ["id", "team", "user"]
 
 
-class TestTeamMemberViewSet(PermDomainMemberViewSetMixin, ModelViewSet):
+class TestTeamMemberViewSet(
+    PermDomainMemberViewSetMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    GenericViewSet,
+):
     __test__ = False
     queryset = TestTeamMember.objects.all()
     serializer_class = TestTeamMemberSerializer
@@ -352,10 +358,8 @@ def expect(allowed, exc):
 @pytest.mark.parametrize(
     "actor, action, allowed",
     [
-        ("admin", "destroy", True),
         ("admin", "roles", True),
         ("admin", "retrieve", False),  # self-only
-        ("member", "destroy", False),
         ("member", "roles", False),
         ("member", "retrieve", True),
     ],
@@ -554,14 +558,16 @@ def test_assign_roles_to_user_refused(
 # --- `PermDomainMemberViewSetMixin`
 
 
-def call(team, actor, target, data=None):
-    """`PUT {target's row}/roles/` with `data`, or `DELETE` it when `data` is None."""
+def call(team, actor, target, data=None, path="roles/"):
+    """`PUT {target's row}/roles/` with `data`, or `DELETE {row}/{path}` when None."""
     domain, users = team
-    method, name = ("delete", "destroy") if data is None else ("put", "roles")
-    request = getattr(APIRequestFactory(), method)("/", data, format="json")
-    force_authenticate(request, users[actor])
+    method = "delete" if data is None else "put"
     row = TestTeamMember.objects.get(team=domain, user=users[target])
-    return TestTeamMemberViewSet.as_view({method: name})(request, pk=row.pk), row
+    url = f"/members/{row.pk}/{path}"
+    request = getattr(APIRequestFactory(), method)(url, data, format="json")
+    force_authenticate(request, users[actor])
+    actions = {"put": "roles", "delete": "roles"} if path else {"get": "retrieve"}
+    return TestTeamMemberViewSet.as_view(actions)(request, pk=row.pk), row
 
 
 @pytest.mark.parametrize(
@@ -611,7 +617,7 @@ def test_roles_action_refused(team, no_seats):
         ("owner", "owner", 409),
     ],
 )
-def test_destroy(team, actor, target, status):
+def test_roles_delete(team, actor, target, status):
     domain, users = team
     if status == 409:
         domain.remove_roles_from_user(users["admin"], ["adm"])
@@ -619,3 +625,10 @@ def test_destroy(team, actor, target, status):
     assert response.status_code == status, response.data
     assert TestTeamMember.objects.filter(pk=row.pk).exists() is (status != 204)
     assert (users[target] in domain.users.all()) is (status != 204)
+
+
+def test_destroy_points_at_roles(team):
+    response, row = call(team, "owner", "member", path="")
+    assert response.status_code == 405, response.data
+    assert f"Use DELETE /members/{row.pk}/roles/ " in response.data["detail"]
+    assert TestTeamMember.objects.filter(pk=row.pk).exists()
