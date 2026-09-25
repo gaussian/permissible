@@ -30,7 +30,7 @@ from permissible.exceptions import RoleGrantRefused
 from permissible.perm_def import p, IS_AUTHENTICATED
 from permissible.permissions import PermissiblePerms
 from permissible.policies import make_domain_member_policy
-from permissible.views import PermDomainMemberViewSetMixin
+from permissible.views import PermDomainMemberViewSetMixin, PermDomainViewSetMixin
 
 
 # Define domain models
@@ -57,6 +57,19 @@ class TestIntegrationTeamModel(PermDomain):
 
     def __str__(self):
         return self.name
+
+    @classmethod
+    def get_policies(cls):
+        return {
+            "global": {"retrieve": IS_AUTHENTICATED, "user_roles": IS_AUTHENTICATED},
+            "object": {"retrieve": p(["view"]), "user_roles": p(["change_permission"])},
+        }
+
+
+class TestTeamViewSet(PermDomainViewSetMixin, GenericViewSet):
+    __test__ = False
+    queryset = TestIntegrationTeamModel.objects.all()
+    permission_classes = [PermissiblePerms]
 
 
 class TestTeamRole(PermDomainRole):
@@ -130,7 +143,7 @@ class TestTeamMember(PermDomainMember):
     @classmethod
     def get_policies(cls):
         return {
-            "global": {a: IS_AUTHENTICATED for a in ("retrieve", "roles")},
+            "global": {"retrieve": IS_AUTHENTICATED},
             "object": make_domain_member_policy("team"),
         }
 
@@ -358,9 +371,7 @@ def expect(allowed, exc):
 @pytest.mark.parametrize(
     "actor, action, allowed",
     [
-        ("admin", "roles", True),
         ("admin", "retrieve", False),  # self-only
-        ("member", "roles", False),
         ("member", "retrieve", True),
     ],
 )
@@ -555,19 +566,32 @@ def test_assign_roles_to_user_refused(
     assert ("No seats left" in caplog.text) is member_if_refused
 
 
-# --- `PermDomainMemberViewSetMixin`
+# --- `PermDomainViewSetMixin.user_roles` and `PermDomainMemberViewSetMixin`
 
 
-def call(team, actor, target, data=None, path="roles/"):
-    """`PUT {target's row}/roles/` with `data`, or `DELETE {row}/{path}` when None."""
+@pytest.mark.parametrize(
+    "actor, allowed",
+    [("owner", True), ("admin", True), ("viewer", False), ("other", False)],
+)
+def test_user_roles_policy(team, monkeypatch, actor, allowed):
     domain, users = team
+    assert domain.has_object_permission(users[actor], "user_roles") is allowed
+    # Not merged into the domain's policies: never granted
+    monkeypatch.setattr(type(domain), "get_policies", classmethod(lambda _: {}))
+    with pytest.raises(AssertionError, match="user_roles"):
+        domain.has_global_permission(users[actor], "user_roles")
+
+
+def call(team, actor, target, data=None):
+    """`PUT {team}/users/{target}/roles/` with `data`, or `DELETE` when None."""
+    domain, users = team
+    user_id = users[target].pk if target in users else target
+    url = f"/teams/{domain.pk}/users/{user_id}/roles/"
     method = "delete" if data is None else "put"
-    row = TestTeamMember.objects.get(team=domain, user=users[target])
-    url = f"/members/{row.pk}/{path}"
     request = getattr(APIRequestFactory(), method)(url, data, format="json")
     force_authenticate(request, users[actor])
-    actions = {"put": "roles", "delete": "roles"} if path else {"get": "retrieve"}
-    return TestTeamMemberViewSet.as_view(actions)(request, pk=row.pk), row
+    view = TestTeamViewSet.as_view({"put": "user_roles", "delete": "user_roles"})
+    return view(request, pk=domain.pk, user_id=str(user_id))
 
 
 @pytest.mark.parametrize(
@@ -577,19 +601,18 @@ def call(team, actor, target, data=None, path="roles/"):
         ("admin", "member", ["con", "nope"], 400),
         ("admin", "member", "con", 400),  # not a list
         ("admin", "member", None, 400),  # missing
-        ("member", "member", ["con"], 403),  # no change_permission: the policy
         ("admin", "owner", ["view"], 403),  # escalation
         ("owner", "owner", ["view"], 409),  # lockout: add another manager first
     ],
 )
-def test_roles_action(team, actor, target, roles, status):
+def test_user_roles_put(team, actor, target, roles, status):
     domain, users = team
     if status == 409:
         domain.remove_roles_from_user(users["admin"], ["adm"])
-    response, row = call(team, actor, target, {} if roles is None else {"roles": roles})
+    response = call(team, actor, target, {} if roles is None else {"roles": roles})
     assert response.status_code == status, response.data
     if status == 200:
-        assert response.data["id"] == row.id
+        assert response.data == {"roles": sorted({*roles, "mem"})}
         assert set(domain.get_roles_for_user(users[target])) == {*roles, "mem"}
     else:
         assert users[target] in domain.users.all()
@@ -597,8 +620,8 @@ def test_roles_action(team, actor, target, roles, status):
         assert list(response.data) == ["roles"]
 
 
-def test_roles_action_refused(team, no_seats):
-    response, _ = call(team, "owner", "member", {"roles": ["own"]})
+def test_user_roles_refused(team, no_seats):
+    response = call(team, "owner", "member", {"roles": ["own"]})
     assert response.status_code == 409, response.data
     assert response.data == {
         "code": "seat_refused",
@@ -613,22 +636,43 @@ def test_roles_action_refused(team, no_seats):
     [
         ("admin", "viewer", 204),  # an admin need not be able to revoke "own"
         ("admin", "owner", 403),  # escalation
-        ("member", "member", 403),  # no change_permission: the policy
         ("owner", "owner", 409),
     ],
 )
-def test_roles_delete(team, actor, target, status):
+def test_user_roles_delete(team, actor, target, status):
     domain, users = team
     if status == 409:
         domain.remove_roles_from_user(users["admin"], ["adm"])
-    response, row = call(team, actor, target)
+    response = call(team, actor, target)
     assert response.status_code == status, response.data
-    assert TestTeamMember.objects.filter(pk=row.pk).exists() is (status != 204)
-    assert (users[target] in domain.users.all()) is (status != 204)
+    rows = TestTeamMember.objects.filter(team=domain, user=users[target])
+    assert rows.exists() is (status != 204)
+    assert bool(set(domain.get_roles_for_user(users[target]))) is (status != 204)
 
 
-def test_destroy_points_at_roles(team):
-    response, row = call(team, "owner", "member", path="")
+@pytest.mark.parametrize(
+    "actor, status",
+    [
+        ("owner", 404),  # a non-member or unknown user: never a new member
+        ("member", 403),  # can see the team, no change_permission
+        ("other", 404),  # cannot see the team
+    ],
+)
+@pytest.mark.parametrize("data", [{"roles": ["con"]}, None])
+def test_user_roles_same_response(team, actor, status, data):
+    """Unknown vs. non-member (vs. member, when denied) are indistinguishable."""
+    targets = ["other", 0, "x"] if actor == "owner" else ["viewer", "other", 0]
+    rs = [call(team, actor, t, data) for t in targets]
+    assert {(r.status_code, str(r.data)) for r in rs} == {(status, str(rs[0].data))}
+    assert team[1]["other"] not in team[0].users.all()
+
+
+def test_member_destroy_points_at_domain(team):
+    domain, users = team
+    row = TestTeamMember.objects.get(team=domain, user=users["member"])
+    request = APIRequestFactory().delete(f"/members/{row.pk}/")
+    force_authenticate(request, users["owner"])
+    response = TestTeamMemberViewSet.as_view({"get": "retrieve"})(request, pk=row.pk)
     assert response.status_code == 405, response.data
-    assert f"Use DELETE /members/{row.pk}/roles/ " in response.data["detail"]
+    assert "DELETE {team_id}/users/{user_id}/roles/ on the team" in str(response.data)
     assert TestTeamMember.objects.filter(pk=row.pk).exists()
