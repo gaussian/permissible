@@ -131,8 +131,8 @@ def make_domain_owned_policy(domain_attr_path: str):
     }
 
 
-# POLICY MAKER: Creates a policy for a DomainMember object. A member's row is
-# their own config; "roles" (join/leave) needs "change_permission" on the domain.
+# POLICY MAKER: Creates a policy for a DomainMember object: a member's row is
+# their own config. Roles (and so membership) change on the domain's "user_roles".
 def make_domain_member_policy(domain_name: str):
     perm_def_self = p(
         [],
@@ -143,5 +143,4 @@ def make_domain_member_policy(domain_name: str):
         "retrieve": perm_def_self,
         "update": perm_def_self,
         "partial_update": perm_def_self,
-        "roles": p(["change_permission"], domain_name),
     }

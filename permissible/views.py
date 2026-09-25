@@ -3,36 +3,38 @@
 Author: Kut Akdogan & Gaussian Holdings, LLC. (2016-)
 """
 
+from django.http import Http404
 from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException, MethodNotAllowed, ValidationError
 from rest_framework.fields import empty
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 
 from permissible.exceptions import RoleGrantRefused, RoleLockoutDenied
 
 
-class PermDomainMemberViewSetMixin:
-    """
-    For a `PermDomainMember` viewset, which should not expose create/destroy: a
-    row exists while its user holds a role. Gate with `make_domain_member_policy`
-    ("roles") and a global policy that also has "roles".
+class PermDomainViewSetMixin:
+    """For a `PermDomain` viewset; its policies need a "user_roles" entry."""
 
-    - `PUT {id}/roles/` `{"roles": [code]}`: 400 (keyed "roles") for a code not
-      in `ROLE_DEFINITIONS`; `set_roles_for_user(by=request.user)`; returns the row.
-    - `DELETE {id}/roles/`: `remove_roles_from_user(None, by=request.user)`
-      (guarded on the held roles only), then deletes the row; 204.
-    - `DELETE {id}/` -> 405 pointing at `DELETE {id}/roles/`.
-    - `RoleLockoutDenied` -> 409 ("add another manager first"); escalation stays 403.
-    - `RoleGrantRefused` -> 409 `{"code": exc.code, "detail": str(exc), **exc.fields}`.
-    """
-
-    @action(detail=True, methods=["put", "delete"])
-    def roles(self, request, *args, **kwargs):
-        """Set the member's roles (PUT), or strip them all (DELETE), which also
-        ends the membership: the row exists only while it holds a role."""
-        member = self.get_object()
-        domain = member.get_domain()
+    @action(
+        detail=True,
+        methods=["put", "delete"],
+        url_path=r"users/(?P<user_id>[^/.]+)/roles",
+    )
+    def user_roles(self, request, user_id, *args, **kwargs):
+        """
+        `PUT` `{"roles": [code]}` sets an existing member's roles (400 keyed "roles"
+        on an unknown code). `DELETE` strips them all, which also ends the
+        membership: the row exists only while it holds a role; 204. A non-member
+        gets 404. Escalation 403; lockout 409; `RoleGrantRefused` 409 `{"code",
+        "detail", **fields}`.
+        """
+        domain = self.get_object()
+        try:  # one 404 body, whether `user_id` is malformed, unknown or not a member
+            member = get_object_or_404(domain.get_user_joins(), user_id=user_id)
+        except Http404:
+            raise Http404
         if request.method == "DELETE":
             domain.remove_roles_from_user(member.user, None, by=request.user)
             member.delete()
@@ -46,18 +48,7 @@ class PermDomainMemberViewSetMixin:
         except ValidationError as exc:
             raise ValidationError({"roles": exc.detail})
         domain.set_roles_for_user(member.user, roles, by=request.user)
-        return Response(self.get_serializer(member).data)
-
-    # Not `http_method_not_allowed`: permission checks in `initial()` deny an
-    # unmapped method (`action is None`) with 403 before that could run.
-    def initial(self, request, *args, **kwargs):
-        if self.action is None and request.method == "DELETE" and kwargs:
-            raise MethodNotAllowed(
-                "DELETE",
-                detail=f"Use DELETE {request.path.rstrip('/')}/roles/ to remove "
-                "a member: it strips their roles, which ends the membership.",
-            )
-        super().initial(request, *args, **kwargs)
+        return Response({"roles": sorted(domain.get_roles_for_user(member.user))})
 
     def handle_exception(self, exc):
         if isinstance(exc, RoleGrantRefused):
@@ -67,3 +58,20 @@ class PermDomainMemberViewSetMixin:
             exc = APIException(str(exc), code="lockout")
             exc.status_code = status.HTTP_409_CONFLICT
         return super().handle_exception(exc)
+
+
+class PermDomainMemberViewSetMixin:
+    """For a `PermDomainMember` viewset: list/retrieve/update only."""
+
+    # Not `http_method_not_allowed`: permission checks in `initial()` deny an
+    # unmapped method (`action is None`) with 403 before that could run.
+    def initial(self, request, *args, **kwargs):
+        if self.action is None and request.method == "DELETE" and kwargs:
+            domain = self.get_queryset().model.get_domain_field().name
+            raise MethodNotAllowed(
+                "DELETE",
+                detail=f"Use DELETE {{{domain}_id}}/users/{{user_id}}/roles/ on the "
+                f"{domain} to remove a member: it strips their roles, which ends "
+                "the membership.",
+            )
+        super().initial(request, *args, **kwargs)
