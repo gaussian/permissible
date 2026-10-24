@@ -9,6 +9,7 @@ Published to PyPI.
 - Tests: `tests/` (pytest-django, settings at `tests.settings`) — `uv run --all-extras pytest`
 - Lint + format: `uv run --all-extras ruff check permissible/ tests/` and `ruff format --check permissible/ tests/`
 - Default working branch: `develop`. Releases flow `develop` → `main`.
+- Dependency cooldown: uv never resolves a release under 7 days old (`exclude-newer` under `[tool.uv]` in `pyproject.toml`; it also covers the release build's setuptools). Urgent fix: add `<pkg> = false` under `exclude-newer-package`, run `uv lock --upgrade-package <pkg>`, and remove the exemption after 7 days.
 
 ## Opening PRs & versioning
 
