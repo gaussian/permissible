@@ -28,15 +28,11 @@ jobs:
       - name: Checkout latest version tag
         run: git checkout $(git describe --tags --abbrev=0)
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
+      - uses: astral-sh/setup-uv@v9.0.0
 
+      # uv build honours [tool.uv] exclude-newer (the 7-day cooldown) for setuptools; pip would not.
       - name: Build release distributions
-        run: |
-          python -m pip install build
-          python -m build
+        run: uv build
 
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
