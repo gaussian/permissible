@@ -26,10 +26,7 @@ Lands a feature branch and releases it in one go. Arguments: `$ARGUMENTS`. The b
    ```
 
 4. **Run all checks. They must pass.** If any fail, stop and report; do not release.
-
-   ```
-   uv run --all-extras ruff check permissible/ tests/ && uv run --all-extras ruff format --check permissible/ tests/
-   uv run --all-extras pytest
-   ```
+   - Locally: run every lint and test `run:` command from `.github/workflows/checks.yml`. Skip jobs that need service containers (e.g. a database), and say which ones you skipped.
+   - In CI: the merge pushed to the target branch, which starts the Checks workflow. Check it with one-shot `gh run list --workflow Checks --branch <target> --limit 1 --json status,conclusion` until it completes; it must conclude `success`.
 
 5. **Release.** Run `/create-merge-pr` again (Pathway B) to open the target → `main` PR, bump the version with the bump type above, and merge it. If you are on a detached HEAD from step 2, skip its local `git pull`.
