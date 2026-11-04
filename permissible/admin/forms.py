@@ -19,6 +19,8 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django import forms
 
+from permissible.models import OWNER_ROLE
+
 User = get_user_model()
 
 
@@ -140,7 +142,7 @@ class BaseRoleBasedForm(forms.Form):
                     continue
 
                 # Only superusers can modify admin/owner roles
-                restricted_roles = ("adm", "own")
+                restricted_roles = ("adm", OWNER_ROLE)
                 if (
                     any(r in restricted_roles for r in roles_to_change)
                     and not request.user.is_superuser

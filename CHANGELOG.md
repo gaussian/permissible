@@ -3,6 +3,7 @@
 ## Unreleased
 
 - 7-day dependency cooldown: `exclude-newer = "7 days"` under `[tool.uv]`. Releases build with `uv build`, so setuptools gets the cooldown too.
+- `OWNER_ROLE = "own"` (`permissible.models`).
 
 ## 0.12.4
 
