@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # The role every member holds: `build_role_field`'s default, the group the
 # member signal watches, and the role `set_roles_for_user` always keeps.
 MEMBER_ROLE = "mem"
+OWNER_ROLE = "own"
 
 
 class PermDomain(BasePermDomain):
@@ -445,7 +446,7 @@ class PermDomainRole(
             "Admin",
             ["view", "add_on", "change_on", "change", "change_permission"],
         ),
-        "own": (
+        OWNER_ROLE: (
             "Owner",
             ["view", "add_on", "change_on", "change", "change_permission", "delete"],
         ),
