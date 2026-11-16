@@ -4,6 +4,7 @@
 
 - 7-day dependency cooldown: `exclude-newer = "7 days"` under `[tool.uv]`. Releases build with `uv build`, so setuptools gets the cooldown too.
 - `OWNER_ROLE = "own"` (`permissible.models`).
+- Repo copies of the `create-merge-pr` and `merge-feature-and-release` agent skills removed; both ship machine-wide from lobster (`~/.agents/skills/`). `AGENTS.md` points there, and its format check now runs under `uv run`.
 
 ## 0.12.4
 
