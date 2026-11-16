@@ -7,7 +7,8 @@ Published to PyPI.
 
 - Source: `permissible/`
 - Tests: `tests/` (pytest-django, settings at `tests.settings`) — `uv run --all-extras pytest`
-- Lint + format: `uv run --all-extras ruff check permissible/ tests/` and `ruff format --check permissible/ tests/`
+- Lint + format: `uv run --all-extras ruff check permissible/ tests/` and `uv run --all-extras ruff format --check permissible/ tests/`
+- Type-check: none (no type checker is configured, locally or in CI).
 - Default working branch: `develop`. Releases flow `develop` → `main`.
 - Dependency cooldown: uv never resolves a release under 7 days old (`exclude-newer` under `[tool.uv]` in `pyproject.toml`; it also covers the release build's setuptools). Urgent fix: add `<pkg> = false` under `exclude-newer-package`, run `uv lock --upgrade-package <pkg>`, and remove the exemption after 7 days.
 
@@ -19,5 +20,6 @@ The version is a static string in `pyproject.toml`, `permissible/__init__.py`, a
 deliberately, or no release is cut. Publishing to PyPI is automatic once a
 `develop` → `main` PR merges.
 
-**Follow the `create-merge-pr` skill** (`.agents/skills/create-merge-pr/`) for the
-full PR workflow, including when and how to bump the version.
+**Follow the `create-merge-pr` skill** (the machine-wide skill, installed by lobster
+into `~/.agents/skills/create-merge-pr/`) for the full PR workflow, including when
+and how to bump the version.
